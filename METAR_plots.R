@@ -149,6 +149,11 @@ ggplot(day_hr_ct,
 
 
 # Just plot MSY
+NotFancy <- function(l) {
+  l <- formatC(round(l, 0), width = 6, flag = " ")
+  parse(text=l)
+}
+
 notam_count_plot <- ggplot(day_hr_ct %>% 
          filter(notam_location == "KMSY" &
                   day_hr >= '2019-04-02' & day_hr <= '2019-04-09'),
@@ -156,9 +161,13 @@ notam_count_plot <- ggplot(day_hr_ct %>%
            y = count_active,
            group = notam_location)) +
   geom_line(color = 'darkgreen', size = 1) +
+  scale_y_continuous(name = "Count of active messages",
+                     breaks = seq(0, 100, 1),
+                     labels = NotFancy)+#scales::comma) +
   theme_bw() +
   ggtitle('Count of active NOTAMs in MSY') 
 
+notam_count_plot
 
 grid.arrange(notam_count_plot, sky_plot, vis_plot)
 # Save to file with arrangeGrob
@@ -174,4 +183,19 @@ n_MSY = n %>%
 
 
 unique(n_MSY$text)
+
+# And all active NOTAMs
+n_MSY = n %>% 
+  filter(notam_location == "KMSY" &
+           start_time >= '2018-01-01' & end_time <= '2019-12-01')
+
+n_MSY = n_MSY %>% 
+  filter(start_time < '2019-04-09' & end_time > '2019-04-02')
+
+
+table(n_MSY$keyword) 
+
+write.csv(n_MSY[,1:5],
+          file = 'Active_NOTAMs_MSY_April_2019.csv', 
+          row.names = F)
 
