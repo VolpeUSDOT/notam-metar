@@ -59,20 +59,21 @@ for(i in day_hour){
   n_filt = n %>%
     filter(start_time <= i & end_time >= i) %>%
     group_by(notam_location) %>%
-    summarize(count_active = n())
+    summarize(count_active = n()) %>%
+    mutate(day_hr = i)
   
   day_hr_ct = rbind(day_hr_ct, n_filt)
 
   }
 
-day_hr_ctx = data.frame(day_hr_ct, day_hour)
+day_hr_ct = day_hr_ct %>%
+  mutate(day_hr = as.POSIXct(day_hr, origin = '1970-01-01', tz = 'UTC'))
 
 # Plotting ----
 # Plot a dual-axis figure for visibility and sky level 1
 
 d_filter = d %>%
-  filter(station %in% c("MSY"
-                        #, "PHL", "LAX"
+  filter(station %in% c("MSY", "PHL", "LAX"
                         )) %>%
   filter(date >= '2019-04-01' & date < '2019-05-01')
   
@@ -107,3 +108,70 @@ vis_plot = ggplot(d_filter, aes(group = station)) +
   theme_bw()
 
 grid.arrange(sky_plot, vis_plot)
+
+
+# Zoom to one week, one location. Put vis in feet, 5280' per mile
+d_filter2 = d_filter %>% 
+  mutate(vis_ft = vsby*5280) %>% 
+  filter(date >= "2019-04-02" & date <= "2019-04-09" & station == 'MSY')
+
+
+sky_plot = ggplot(d_filter2) +
+  geom_line(aes(x = valid, y = skyl1), color = 'blue') +
+  xlab("Date") +
+  ylab("Sky Level 1 Altitude (ft) \n Limit 5000'") +
+  ylim(0, 5000) +
+  theme_bw() +
+  ggtitle('MSY METAR sample, 2019-04-02 to 2019-04-09')
+
+vis_plot = ggplot(d_filter2) +
+  geom_line(aes(x = valid, y = vis_ft), color = 'red') +
+  xlab("Date") +
+  ylab("Visibility (ft) \n Limit 10,000'") +
+  ylim(0, 10000) +
+  theme_bw()
+
+grid.arrange(sky_plot, vis_plot)
+# Save to file with arrangeGrob
+g <- arrangeGrob(sky_plot, vis_plot)
+g
+ggsave('METAR_example_plot_MSY.jpeg', g)
+
+
+# Plot active NOTAMs ----
+# First, simple plot of count by station and active date range
+ggplot(day_hr_ct,
+       aes(x = day_hr,
+           y = count_active,
+           group = notam_location)) +
+  geom_line() +
+  facet_wrap(~notam_location)
+
+
+# Just plot MSY
+notam_count_plot <- ggplot(day_hr_ct %>% 
+         filter(notam_location == "KMSY" &
+                  day_hr >= '2019-04-02' & day_hr <= '2019-04-09'),
+       aes(x = day_hr,
+           y = count_active,
+           group = notam_location)) +
+  geom_line(color = 'darkgreen', size = 1) +
+  theme_bw() +
+  ggtitle('Count of active NOTAMs in MSY') 
+
+
+grid.arrange(notam_count_plot, sky_plot, vis_plot)
+# Save to file with arrangeGrob
+g <- arrangeGrob(notam_count_plot, sky_plot, vis_plot)
+
+ggsave('METAR_example_plot_MSY_plus_NOTAMS.jpeg', g)
+
+# What are the notams that vary regularly at MSY every day?
+
+n_MSY = n %>% 
+  filter(notam_location == "KMSY" &
+           start_time >= '2019-04-02' & end_time <= '2019-04-09')
+
+
+unique(n_MSY$text)
+
