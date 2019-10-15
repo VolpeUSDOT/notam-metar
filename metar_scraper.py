@@ -44,68 +44,53 @@ def download_data(uri):
     print("Exhausted attempts to download, returning empty data")
     return ""
 
-
-def get_stations_from_filelist(filename):
-    """Build a listing of stations from a simple file listing the stations.
-
-    The file should simply have one station per line.
-    """
-    stations = []
-    for line in open(filename):
-        stations.append(line.strip())
-    return stations
-
-
-def get_stations_from_networks():
-    """Build a station list by using a bunch of IEM networks."""
-    stations = []
-    states = """AK AL AR AZ CA CO CT DE FL GA HI IA ID IL IN KS KY LA MA MD ME
-     MI MN MO MS MT NC ND NE NH NJ NM NV NY OH OK OR PA RI SC SD TN TX UT VA VT
-     WA WI WV WY"""
-    # IEM quirk to have Iowa AWOS sites in its own labeled network
-    networks = ['AWOS']
-    for state in states.split():
-        networks.append("%s_ASOS" % (state,))
-
-    for network in networks:
-        # Get metadata
-        uri = ("https://mesonet.agron.iastate.edu/"
-               "geojson/network/%s.geojson") % (network,)
-        data = urlopen(uri)
-        jdict = json.load(data)
-        for site in jdict['features']:
-            stations.append(site['properties']['sid'])
-    return stations
-
-
-def get_metar(stations):
+def get_metar(stations = None):
     """
     Our main method
-    stations is a list of airports
+    stations is a DataFrame with airports as row index, and colums for start_time and end_time indicating the
+    starting and ending time of the available notams for which we should get metars.
+    Both writes out a .txt file for each station, and compiles the results into a DataFrame
     """
-    # timestamps in UTC to request data for
-    startts = datetime.datetime(2012, 8, 1)
-    endts = datetime.datetime(2012, 9, 1)
-
+    import datetime as dt
+    import pandas as pd
+    
     service = SERVICE + "data=all&tz=Etc/UTC&format=comma&latlon=yes&"
 
-    service += startts.strftime('year1=%Y&month1=%m&day1=%d&')
-    service += endts.strftime('year2=%Y&month2=%m&day2=%d&')
+    if stations is None:
+        print('Provide DataFrame of stations and time range')
+    else:
+        
+        df_all = [] # blank DataFrame to populate
+        
+        for index, row in stations.iterrows():
+            
+            startts = dt.datetime.strptime(row['start_time'], '%Y-%m-%d %H:%M:%S.%f')
+            endts = dt.datetime.strptime(row['end_time'], '%Y-%m-%d %H:%M:%S.%f')
 
-    # Two examples of how to specify a list of stations
-    # stations = get_stations_from_networks()
-    # stations = get_stations_from_filelist("mystations.txt")
-    
-    for station in stations:
-        uri = '%s&station=%s' % (service, station)
-        print('Downloading: %s' % (station, ))
-        data = download_data(uri)
-        outfn = '%s_%s_%s.txt' % (station, startts.strftime("%Y%m%d%H%M"),
-                                  endts.strftime("%Y%m%d%H%M"))
-        out = open(outfn, 'w')
-        out.write(data)
-        out.close()
+            station_service = service + startts.strftime('year1=%Y&month1=%m&day1=%d&')
+            station_service += endts.strftime('year2=%Y&month2=%m&day2=%d&')
 
+            uri = '%s&station=%s' % (station_service, index)
+            print('Downloading: %s' % (index, ))
+            data = download_data(uri)
+            
+            # Format data string as DataFrame, and keep just the data elements. Save as one large DataFrame
+            df = pd.DataFrame([x.split(',') for x in data.split('\n')])
+            df.columns = df.iloc[5] # Rename the columns with the values in the fifth row
+            df = df[6:].reset_index() # Keep only values from the sixth row on, and reset the row index
+
+            df_all.append(df)
+
+            
+            outfn = '%s_%s_%s.txt' % (index, startts.strftime("%Y%m%d%H%M"),
+                                      endts.strftime("%Y%m%d%H%M"))
+            out = open(outfn, 'w')
+            out.write(data)
+            out.close()
+        
+        # Once loop is finished, use concat 
+        df_all = pd.concat(df_all)
+        return df_all    
 
 if __name__ == '__main__':
     get_metar()
