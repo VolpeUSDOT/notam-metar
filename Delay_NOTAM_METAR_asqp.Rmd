@@ -1,0 +1,257 @@
+---
+title: "Linking delay with WX and NOTAMs"
+author: "Dan Flynn"
+output: html_document
+---
+
+Delay data: Using ASQP Data (from BTS, [here](https://transtats.bts.gov/Tables.asp?DB_ID=120)), since the provided `flightmeasures5c` only had a few days of flights in May 2019, while the bulk of the example NOTAM and METAR data are in June 2019.
+
+```{r setup, echo = F, message=F}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(readxl)
+library(gridExtra)
+library(sjPlot)    # For nicer output tables of the statistical models
+library(plotly)    # for interactive plots
+library(kableExtra)# for better tables
+
+# Working directory: This sets the path to my H: drive if being run from my computer, otherwise put in your own path
+workingdir <- ifelse(grepl('flynn', system('whoami', intern = T)),
+                     "~/NOTAM_Local/",
+                     "<Put_Your_Path_Here>")
+
+setwd(workingdir)
+knitr::opts_knit$set(root.dir = workingdir)
+
+# Load delay data
+codeloc <- '~/git/notam-metar'
+source(file.path(codeloc, 'read_ASQP.R'))
+  
+d <- read_ASQP('On_Time_Reporting_Carrier_On_Time_Performance_(1987_present)_2019_6.csv')
+
+# Load METAR
+metar <- read.csv('METAR_extract.csv',
+                  na.strings = 'M')
+
+# Load NOTAMs
+notam <- read_xlsx('notam_extract.xlsx', sheet = 'data')
+
+```
+
+Date ranges:
+METARS from 2017-04-26 to 2019-06-29, with 765,764 records. 
+
+
+```{r metar_summary}
+m = metar %>%
+  select(-X, -index) %>%
+  filter(station != '') %>%
+  mutate(vsby = as.numeric(vsby),
+         skyl1 = as.numeric(skyl1),
+         skyl2 = as.numeric(skyl2),
+         skyl3 = as.numeric(skyl3),
+         skyl4 = as.numeric(skyl4),
+         valid = as.POSIXct(as.character(valid), format = "%Y-%m-%d %H:%M", tz = "UTC"),
+         date = format(valid, "%Y-%m-%d"),
+         hr = format(valid, "%H"),
+         metar = as.character(metar))
+
+m %>%
+  group_by(station) %>%
+  summarize(vis_min = min(vsby, na.rm=T),
+            vis_max = max(vsby, na.rm=T),
+            vis_mean = mean(vsby, na.rm=T))
+
+range(m$valid, na.rm = T)
+```
+
+Match the NOTAM data to these METARs. NOTAM data are for the similar time range, from April 2017 to June 2019, with 6,717 records in total. After matching to the same stations as the METARS, there are 2,142 NOTAM records. The same filtering, to match METARs to NOTAMs, results in 708,864 records, from 765,752 in total.
+
+```{r match_notam_metar}
+
+notam$station <- sub('^K', '', as.character(notam$notam_location))
+
+n = notam %>%
+  mutate(start_time = as.POSIXct(start_time, format = "%Y-%m-%d %H:%M", tz = "UTC"),
+         end_time = as.POSIXct(end_time, format = "%Y-%m-%d %H:%M", tz = "UTC"),
+         start_hr = format(start_time, format = "%Y-%m-%d %H"),
+         end_hr = format(end_time, format = "%Y-%m-%d %H"))
+nx = n %>%
+  filter(notam_location %in% ifelse(nchar(as.character(metar$station)) == 3, paste0("K", metar$station), metar$station))
+
+mx = m %>%
+  filter(as.character(station) %in% nx$station)
+
+```
+
+Create a variable to count if a NOTAM involves an ILS (instrument landing system).
+
+```{r notam_ILS}
+
+ils_present <- grepl('ILS', n$text)
+n <- data.frame(n, ils_present)
+
+n %>%
+  filter(ils_present) %>%
+  group_by(station) %>%
+  summarize(`ILS count` = n())
+
+```
+
+We also want to extract RVR from the METARS.
+
+From Federal Meteorological Handbook:
+
+- Visibility - VVVVVSM
+- RVR is measured in increments of 100 feet up to 1,000 feet, increments of 200 feet from 1,000 feet to 3,000 feet, and increments of 500 feet above 3,000 feet to 6,000 feet.
+- Runway Visual Range - RDRDR/VRVRVRVRFT or RDRDR/VNVNVNVNVVXVXVXVXFT
+- RVR shall be coded in the format RDRDR/VRVRVRVRFT, where R indicates that the runway number follows, DRDR is the runway number (an additional DR may be used for runway approach directions, such as R for right, L for left, and C for center), VRVRVRVR is the constant reportable value, and FT indicates that units of measurement are feet. A solidus "/" without spaces separates the runway number from the constant reportable value. For example, an RVR value for runway 01L of 800 feet would be coded "R01L/0800FT".
+- RVR that is varying shall be coded in the format, RDRDR/VnVnVnVnVVxVxVxVxFT, where R indicates that the runway number follows, DRDR is the runway number (an additional DR may be used for runway approach directions, such as R for right, L for left, and C for center), VnVnVnVn is the lowest reportable value in feet, V separates lowest and highest visual range values, VxVxVxVx is the highest reportable value, and FT indicates that units of measurement are feet. A solidus "/" without spaces separates the runway number from the reportable values. For example, the 10-minute RVR for runway 01L varying between 600 and 1,000 feet would be coded "R01L/0600V1000FT".
+- The values shall be based on light setting 5 at manual stations regardless of the light setting actually in use (see Appendix D). RVR values shall be coded in increments of 100 feet up to 1,000 feet, increments of 200 feet from 1,000 feet to 3,000 feet, and increments of 500 feet from 3,000 feet to 6,000 feet. Manual RVR shall not be reported below 600 feet. For automated stations, RVR may be reported from up to four designated runways.
+- If the RVR is less than its lowest reportable value, the VRVRVRVR or VnVnVnVn groups shall be preceded by M. If the RVR is greater than its highest reportable value, the VRVRVRVR or VxVxVxVx groups shall be preceded by a P. For example, an RVR for runway 01L of less than 600 feet will be coded "R01L/M0600FT"; an RVR for runway 27 of greater than 6,000 feet will be coded "R27/P6000FT"
+
+
+So extract procedure will look for 'FT' in the text, and extract the numerical value preceeding FT.
+Or better, regular expression for ' R xxx FT'. Where there can be 12 possible characters from R to FT, including only numbers, letters, and a forward slash. Final regex: `R\S{2,3}/\S{3,9}FT`. This will find values starting with R, followed by two or three non-whitespace values (for the runway), then a forward slash, then between 3 and 9 non-whitespace values (for visibility), ending with FT.
+ 
+
+```{r extract_metar}
+m_test = c('R01L/0800FT', 'WSHFT', 'XXXFT', 'xxx R01L/0800FT xxx', 'A2983 RMK AO2 WSHFT 2255')
+
+# rvr_present <- grep('FT', m$metar)
+# Any 12 characters -- not ideal, want to be specific to RVR format 
+# rvr_present <- grep(' R.{12}FT ', m$metar)
+
+rvr_present <- grep('R\\S{2,3}/\\S{3,9}FT', m$metar)
+
+m_rvr <- m[rvr_present,]
+
+# Split on Runway identifier of an RVR, then on FT at end, and keep just the values
+l1 <- strsplit(m_rvr[,'metar'], ' R\\S{2,3}/')
+l2 <- unlist(lapply(l1, function(x) x[[2]]))
+l3 <- unlist(lapply(strsplit(l2, 'FT '), function(x) x[[1]]))
+
+# Varying visibility: includes a V in the middle. Split on V here
+l4 <- strsplit(l3, 'V')
+
+min_RVR <- unlist(lapply(l4, function(x) x[[1]]))
+max_RVR <- unlist(lapply(l4, function(x) ifelse(length(x) > 1, x[[2]], NA)))
+
+# Strip leading P from RVR, this indicates the RVR is greater than the RVR instrument. Also strip leading M, indicating RVR is less than RVR instrument can measure. 
+min_RVR <- as.numeric(sub('^(P|M)', '', min_RVR))
+max_RVR <- as.numeric(sub('^(P|M)', '', max_RVR))
+
+# Add back to subset data frame, then merge with full data frame
+m_rvr <- data.frame(m_rvr, min_RVR, max_RVR)
+
+m <- m %>% left_join(m_rvr)
+
+```
+
+Of the `r format(nrow(m), big.mark = ',')` METARs in this sample, only `r length(rvr_present)` have RVR values recorded, or `r round(100*length(rvr_present)/nrow(m),3)`% of all METARs.
+
+Flight data: `r format(nrow(d), big.mark=',')` flights in the June 2019 BTS flight data.
+
+For these METARs, the RVR values are present for the following airports:
+
+```{r RVR_EDA}
+m %>%
+  filter(!is.na(min_RVR)) %>%
+  group_by(station) %>%
+  summarize(`RVR count` = n())
+
+```
+
+## Join METAR and NOTAMs to flights
+
+There are at least two ways to connect weather and facility notifcations to flights. First, we can count by hour/day the active NOTAMS, relevant METAR values, and number of flights delayed. Second, we can consider each individual flight (preserving informaiton on time of delay, origin and destination), and join the active NOTAMs at origin and destination, as well as relevant METARs at origin and destination, to each flight. We'll consider the flight-level joining here.
+
+```{r flight_join}
+d_drop <- names(d)[grep('^DIV(_|\\d)', names(d))]
+d <- d %>% select(-d_drop)
+
+# Join NOTAMS on origin and destination, use just flight date for now. 
+# d$FLIGHT_DATE <- as.POSIXct(d$FLIGHT_DATE, tz = 'UTC') # Need to use zulu time here, confirm with Ram
+# d$FLIGHT_DATE = as.character(format(d$FLIGHT_DATE, '%Y-%m-%d'))
+d$ORIGIN <- as.character(d$ORIGIN)
+d$DEST <- as.character(d$DEST)
+m$station <- as.character(m$station)
+
+dx <- d#[1:500,]
+d_join <- vector()
+
+start_time <- Sys.time()
+
+for(i in 1:nrow(dx)){
+  dxx <- dx[i,]
+  active_notam_O = n %>% 
+    filter(station == as.character(dxx$ORIGIN) &
+             start_time < dxx$FLIGHT_DATE &
+             end_time > dxx$FLIGHT_DATE)
+  
+  active_notam_D = n %>% 
+    filter(station == as.character(dxx$DEST) &
+             start_time < dxx$FLIGHT_DATE &
+             end_time > dxx$FLIGHT_DATE)
+  
+  notam_O_count = nrow(active_notam_O)
+  notam_O_OBST = sum(active_notam_O$keyword == 'OBST')
+  notam_O_RWY = sum(active_notam_O$keyword == 'RWY')
+  notam_O_AIRSPACE = sum(active_notam_O$keyword == 'AIRSPACE')
+  notam_O_NAV = sum(active_notam_O$keyword == 'NAV')
+  notam_O_ILS = sum(active_notam_O$ils_present)
+  
+  notam_D_count = nrow(active_notam_D)
+  notam_D_OBST = sum(active_notam_D$keyword == 'OBST')
+  notam_D_RWY = sum(active_notam_D$keyword == 'RWY')
+  notam_D_AIRSPACE = sum(active_notam_D$keyword == 'AIRSPACE')
+  notam_D_NAV = sum(active_notam_D$keyword == 'NAV')
+  notam_D_ILS = sum(active_notam_D$ils_present)
+  
+  # Add METAR. Make specific to hour with flight measures in UTC time, currently just by date
+  
+  active_metar_O = m %>% 
+    filter(station == dxx$ORIGIN &
+             date == dxx$FLIGHT_DATE)
+  
+  active_metar_D = m %>% 
+    filter(station == dxx$DEST &
+             date == dxx$FLIGHT_DATE)
+
+  metar_O_count = nrow(active_metar_O)
+  if(metar_O_count > 0) {
+      metar_O_vsby = min(active_metar_O$vsby)
+      metar_O_skyl1 = min(active_metar_O$skyl1)
+      metar_O_wxcodes = names(sort(table(active_metar_O$wxcodes[!is.na(active_metar_O$wxcodes)]), decreasing = T)[1])
+      metar_O_RVR = min(active_metar_O$min_RVR)
+  } else {
+    metar_O_vsby = metar_O_skyl1 = metar_O_wxcodes = metar_O_RVR = NA 
+  }
+  
+  metar_D_count = nrow(active_metar_D)
+  if(metar_D_count >0) {
+      metar_D_vsby = min(active_metar_D$vsby)
+      metar_D_skyl1 = min(active_metar_D$skyl1)
+      metar_D_wxcodes = names(sort(table(active_metar_D$wxcodes[!is.na(active_metar_D$wxcodes)]), decreasing = T)[1])
+      metar_D_RVR = min(active_metar_D$min_RVR)
+  } else {
+    metar_D_vsby = metar_D_skyl1 = metar_D_wxcodes = metar_D_RVR = NA 
+  }
+  # make into a data frame
+  dxx <- cbind(dxx,
+             notam_O_count, notam_O_OBST, notam_O_RWY, notam_O_AIRSPACE, notam_O_NAV, notam_O_ILS,
+             notam_D_count, notam_D_OBST, notam_D_RWY, notam_D_AIRSPACE, notam_D_NAV, notam_D_ILS,
+             metar_O_count, metar_O_vsby, metar_O_skyl1, metar_O_wxcodes, metar_O_RVR,
+             metar_D_count, metar_D_vsby, metar_D_skyl1, metar_D_wxcodes, metar_D_RVR)
+          
+  d_join <- rbind(d_join, dxx)
+ 
+  elapsed = Sys.time() - start_time
+  
+  if(i %% 100 == 0) cat(i, ' . ')
+  if(i %% 1000 == 0) cat(round(elapsed, 3), attr(elapsed, 'units'), '\n')   
+}
+
+
+```
