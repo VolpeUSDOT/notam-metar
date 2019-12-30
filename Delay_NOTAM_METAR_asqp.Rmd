@@ -183,7 +183,7 @@ d_join <- vector()
 
 start_time <- Sys.time()
 
-for(i in 1:nrow(dx)){
+for(i in (nrow(d_join)+1):nrow(dx)){#1:nrow(dx)){
   dxx <- dx[i,]
   active_notam_O = n %>% 
     filter(station == as.character(dxx$ORIGIN) &

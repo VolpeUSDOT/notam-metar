@@ -1,0 +1,520 @@
+---
+title: 'NOTAM Frequency Analysis'
+output:
+  html_document:
+    fig_caption: true
+    df_print: paged
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+---
+
+<!-- Add the following line manually to the rendered HTML document so that IE does not block the javascript elements: -->
+<!-- saved from url=(0014)about:internet --> 
+
+Goals: 
+
+1. Produce visuals of NOTAM frequencies by date.
+  - Both daily fluctuations over time and frequency distributions of counts of NOTAMs by date
+
+2. Analyze which combination of predictors (including season and weekend/weekday) best capture the variation in the NOTAM count data.
+  - Produce table of busiest combinations of season and weekday/end, with statistical support for differences between groups.
+  
+3. Detect and analyze how intra-day variation can contribute to understanding NOTAM counts by date.
+
+```{r setup, echo = F, message=F}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(plotly)    # for interactive plots
+library(kableExtra)# for better tables
+
+# Working directory: This sets the path to my H: drive if being run from my computer, otherwise put in your own path
+workingdir <- ifelse(grepl('flynn', system('whoami', intern = T)),
+                     "~/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
+                     #"H:/Consult/NOTAM + METAR/NOTAM_Freq",
+                     "<Put_Your_Path_Here>")
+
+setwd(workingdir)
+# knitr::opts_knit$set(root.dir = workingdir)
+
+load("NOTAM_Freq.RData")
+# Includes the data frame UniqueInteractions, which organizes each NOTAM as one row. Want to aggregate to counts of NOTAMs by date, with columns indicating weekday and season.
+```
+
+# Daily variation
+
+```{r format}
+
+# Here we use the dplyr syntax of '%>%' to chain together multiple steps. We make a new data frame called 'df', based on an aggregation of the data in UniqueInteractions. dplyr is a package included in the 'tidyverse' set of packages. 
+
+# Season: First define months from date time, then manually code months into seasons with a series of if/else statements nested together.
+
+df <- UniqueInteractions %>% 
+  mutate(weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 1, 0)),
+         quarter = as.factor(quarters(datetimes)),
+         month   = format(date, '%m'),
+         season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
+                                    ifelse(month == '03' | month == '04' | month == '05', 'Spring',
+                                           ifelse(month == '06' | month == '07' | month == '08', 'Summer',
+                                                  ifelse(month == '09' | month == '10' | month == '11', 'Fall', NA)))))) %>% 
+    group_by(date, month, season, weekend) %>% 
+  summarize(count = n())
+
+
+```
+
+
+## Plotting
+
+For plotting, the ggplot2 package included in the tidyverse is quick and flexible. There is a similar chaining idea as in dplyr, but instead of '%>%', the syntax is simply '+'. The main ggplot developer has expressed regret that ggplot doesn't use the same chaining syntax.
+
+### 1. Count of NOTAMs by date
+
+```{r dateplot, warning=FALSE}
+g1 <- ggplot(df, aes(x = date, y = count)) +
+  geom_point(color = scales::alpha('midnightblue', 0.2)) +          # Make semi-transparent points
+  geom_smooth(span = 0.1) +                                         # Add a spline through these
+  theme_bw() +                                                      # Use a cleaner black and white theme
+  ylab("NOTAM counts") + xlab('Date') +
+  ggtitle("Count of NOTAMs by date over the study period")          # Add a title to the plot
+
+ggsave(plot = g1, filename = "NOTAM_Freq_timeline.jpg", width = 6, height = 5) # Save the figure to the working directory
+
+ggplotly(g1)
+
+```
+
+Another version, with separate lines for weekend and weekday:
+
+
+```{r dateplot2, warning=FALSE}
+# Rename the weekend variable values 
+we.labs = c("Weekday", "Weekend") # 0 = *weekday*, see logic in the formatting above
+levels(df$weekend) = we.labs
+
+g1.1 <- ggplot(df, aes(x = date, y = count, color = weekend)) +
+  geom_point(alpha = 0.5) +          
+  geom_smooth(span = 0.1) +                                         # Add a spline through these
+  theme_bw() + 
+  scale_color_discrete(name = "Day of Week") +                        
+  ylab("NOTAM counts") + xlab('Date') +
+  ggtitle("Count of NOTAMs by date over the study period \n Separating by weekend ")    
+
+ggsave(plot = g1.1, filename = "NOTAM_Freq_timeline_we.jpg", width = 6, height = 5) 
+
+ggplotly(g1.1)
+
+```
+
+### 2. Histograms by season + weekend/weekday
+
+This figure shows the distribution of the count of NOTAMs by date. Each bar represents a range of NOTAM counts, and the height of bar indicates number of days with that many NOTAMs. The vertical colored lines indicate the mean count of NOTAMs for that combination of season and weekend/weekday. 
+
+```{r hists}
+
+# Make data frame of mean values
+df_mc <- df %>%
+  group_by(season, weekend) %>%
+  summarize(mean_count = mean(count))
+
+g2 <- ggplot(df, aes(count, fill = weekend, group = weekend)) +      # Within panels, group by weekend
+  geom_histogram(color = "grey20",                                   # Create histograms
+                 bins = 50) +
+  geom_vline(aes(xintercept = mean_count,
+                 color = weekend), data = df_mc) +
+  facet_wrap(~season) +                                              # Make this a multi-panel figure by season
+  scale_fill_discrete(name = "Day of Week") +                        # Set the name for the legend
+  guides(color = FALSE) +                                            # Suppress legend for vertical lines
+  theme_bw() +
+  ylab("Count of days") + xlab("Count of NOTAMs") +
+  ggtitle("Histograms of NOTAM counts by day")
+
+# Add annotations for each vertical line
+df_mc <- df_mc %>%
+  mutate(y = 30,
+         x = mean_count)
+
+g3 = g2 + geom_text(data = df_mc, 
+               mapping = aes(x = x, y = y, 
+                             label = round(mean_count, 0),
+                             color = weekend),
+               size = 3,
+               hjust = 1); g3
+
+ggsave(plot = g3, filename = "NOTAM_Freq_histograms.jpg", width = 6, height = 5)            
+
+```
+
+## Analysis
+
+```{r analysis}
+m1 <- aov(count ~ season + weekend,
+          data = df)
+summary(m1) # Yes, both season and weekend matter
+
+m2 <- aov(count ~ season * weekend,
+          data = df)
+summary(m2) # No significant interaction between season and weekend; there are not different patterns for the combination of season and weekend.
+
+AIC(m1, m2) # Lower AIC for m1 confirms that this is a better model, although not a large difference
+
+# Make a prediction frame for the eight cases of 4 seasons x 2 weekend for a table
+TukeyHSD(m1) # Summer not sig different from spring; spring not sig diff from fall
+
+
+# Test Poisson regression (shouldn't be necessary, since numbers are large)
+m3 <- glm(count ~ season + weekend,
+          family = 'poisson',
+          data = df)
+
+AIC(m1, m3)
+# Much worse by AIC
+```
+
+Test including month of year. This shows no significant effect of month apart from the already-included 'season' variable. We also check the AIC of these two models; a value closer to zero indicates that the model is a more parsimonious characterization of the data.
+
+```{r analysis2}
+m4 <- aov(count ~ season + weekend + month,
+          data = df)
+summary(m4) 
+AIC(m1, m4) 
+```
+
+```{r analysis3}
+# Diagnostics for model m1:
+# post hoc tests between categorical variable levels
+(m1.hsd <- TukeyHSD(m1))
+
+# Plotting residuals: still some pattern
+plot(resid(m1))
+
+# Plotting standard regression diagnostics:
+par(mfrow = c(2, 2)); plot(m1) # Still have two outliers, but a better model than m1
+df[c(72, 73),] # two days in December 2017 with 2891 and 2673 NOTAMs, very high.
+```
+
+Finally, just plotting the month-by-month frequency values for comparison, even though we see above that the season variable is sufficient to characterize the monthly differences.
+
+```{r monthplot}
+m_df <- df %>% 
+  group_by(month) %>% 
+  summarize(mean_count = mean(count), 
+            se_count = sd(count)/sqrt(length(count)),
+            upper = mean_count + se_count,
+            lower = mean_count - se_count)
+
+ggplot(m_df, aes(x = month, y = mean_count)) +
+  geom_pointrange(aes(ymax = upper,
+                      ymin = lower)) +
+#  coord_polar() +                                        # Uncomment for circular plot
+  theme_bw() +
+  ylab('Mean count of NOTAMs') +
+  ggtitle("Mean count of NOTAMs by month \n +/- 1 s.e.")
+```
+
+# Intra-day variation
+
+Further analysis, first to identify what the peak and non-peak times of day are, and then to include these intra-day periods in the model. We will then look at whether including intra-day variation significantly improves the model performance.
+
+## Plotting
+
+First, we need to identify what peak and non-peak times of the day are. Each point in the plot below represents the observed count of NOTMAS within one day and hour.
+
+```{r peak_EDA}
+df_hr <- UniqueInteractions %>%
+  mutate(weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 1, 0)),
+         quarter = as.factor(quarters(datetimes)),
+         month   = format(date, '%m'),
+         season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
+                                    ifelse(month == '03' | month == '04' | month == '05', 'Spring',
+                                           ifelse(month == '06' | month == '07' | month == '08', 'Summer',
+                                                  ifelse(month == '09' | month == '10' | month == '11', 'Fall', NA)))))) %>% 
+    group_by(hour, date, month, season, weekend) %>% 
+  summarize(count = n())
+
+# Rename the weekend variable values 
+we.labs = c("Weekday", "Weekend") # 0 = *weekday*, see logic in the formatting above
+levels(df_hr$weekend) = we.labs
+
+g4 <- ggplot(df_hr, aes(x = hour, y = count, color = weekend)) +
+  geom_point(alpha = 0.4) + 
+  geom_smooth(span = 0.3) +
+  theme_bw() +
+  ylab('Count of NOTAMs by day and hour') + xlab('Hour of day') +
+  ggtitle('Count of NOTAMS') +
+  scale_color_discrete(name = "Day of Week") +
+  facet_wrap(~season)
+
+# ggplotly(g4)
+g4
+
+ggsave(plot = g4, filename = "NOTAM_Freq_ToD_Season_by_day.jpg", width = 6, height = 5)           
+
+```
+
+
+From this plot, we can see that there does not seem to be a strong seasonal pattern in the hourly fluctuation. Overall, it looks like peak for weekdays is 13:00 - 21:00. Weekends are distinctly less peaked, but same time period.
+
+Now, we repeat this daily plot with the average daily count of NOTAMs by hour, to generalize the typical workload expected by hour and season. Each point in the plot below represents the average daily count of NOTMAS within an hour for one month.
+
+```{r peak_EDA_avedaily}
+# Repeat of last plot, but now for average hourly count of NOTAMs within weekend/weekday and season
+df_hr_ave <- df_hr %>%
+  group_by(hour, month, season, weekend) %>%
+  summarize(ave_count = mean(count),
+            se_count = sd(count)/sqrt(n()))
+
+g5 <- ggplot(df_hr_ave, aes(x = hour, y = ave_count, color = weekend)) +
+  geom_point(alpha = 0.4) + 
+  geom_smooth(span = 0.3) +
+  theme_bw() +
+  ylab('Average of NOTAMs within an hour') + xlab('Hour of day') +
+   ggtitle('Average count of NOTAMS') +
+  scale_color_discrete(name = "Day of Week") +
+  facet_wrap(~season)
+
+ggplotly(g5)
+
+ggsave(plot = g5, filename = "NOTAM_Freq_ToD_Season_ave_day.jpg", width = 6, height = 5)           
+
+```
+
+
+Focusing on just the weekday/weekend split now, plot across seasons:
+
+```{r peak_EDA_we}
+
+g5 <- ggplot(df_hr, aes(x = hour, y = count, color = weekend)) +
+  geom_point(alpha = 0.5) + 
+  geom_smooth(span = 0.3) +
+  theme_bw()  +
+  scale_color_discrete(name = "Day of Week") +
+  facet_wrap(~weekend)
+
+
+
+ggplotly(g5)
+
+ggsave(plot = g5, filename = "NOTAM_Freq_ToD_WE.jpg", width = 6, height = 5)            
+
+```
+
+Now it is more clear that there is a distinct shape to the weekday peak, with a stronger early afternoon peak from 13:00-16:00 and then a shoulder from 17:00-21:00.
+
+We'll assess two designations of the peak: two levels with peak and off-peak, and three levels with peak, off-peak, and valley. We'll first use 13:00 - 21:00 UTC as the peak, and all other times as off-peak. We then also designate 05:00 - 09:00 as 'valley' for the three-level version.
+
+The periods are as follows:
+
+```{r period_table}
+df_hr <- df_hr %>%
+  mutate(peak2 = ifelse(hour >= 13 & hour <= 21, 'peak', 'off-peak'),
+         peak3 = ifelse(hour >= 13 & hour <= 21, 'peak', 
+                        ifelse(hour >= 5 & hour <= 10, 'valley',
+                               'off-peak')))
+
+df_hr$peak2 = as.factor(df_hr$peak2)
+#df_hr$peak3 = as.factor(df_hr$peak3)
+
+hr_tab <- df_hr %>% 
+  group_by(hour) %>%
+  summarize(Peak_2 = unique(peak2),
+  Peak_3 = unique(peak3))
+
+knitr::kable(hr_tab, col.names = c('Hour', 'Two-level designation', 'Three-level designation'))
+
+
+```
+
+Plotting these periods over the average daily count plots:
+
+```{r peak_mark}
+g6 <- ggplot(df_hr_ave, aes(x = hour, y = ave_count, color = weekend)) +
+    geom_rect(xmin = 13, xmax = 21,
+            ymin = 0, ymax = 200,
+            fill = scales::alpha('palegreen1', 0.05),
+            color = scales::alpha('grey90', 0)) +
+    geom_rect(xmin = 5, xmax = 10,
+            ymin = 0, ymax = 200,
+            fill = scales::alpha('lightblue', 0.05),
+            color = scales::alpha('grey90', 0))+
+  geom_point(alpha = 0.4) + 
+  geom_smooth(span = 0.3) +
+  theme_bw() +
+  ylab('Average of NOTAMs within an hour') + xlab('Hour of day') +
+   ggtitle('Average count of NOTAMS') +
+  scale_color_discrete(name = "Day of Week") +
+  facet_wrap(~season) 
+
+g7 = g6 + scale_fill_manual("Intra-Day Period", 
+                       values = c(green_fill = scales::alpha('palegreen1', 0.05),
+                                  blue_fill = scales::alpha('lightblue', 0.05)),
+                       labels = c("Peak", "Valley"),
+                       guide = guide_legend(override.aes=aes(fill=NA)))
+
+g7
+
+ggsave(plot = g7, filename = "NOTAM_Freq_ToD_Season_Period_Marked.jpg", width = 7, height = 5.5)           
+
+
+```
+
+
+## Analysis
+
+Here we create two variables called 'peak2' and 'peak3' and test if they are improvements over just using the hours directly.
+
+
+```{r intra_analyis, echo = T}
+m5 <- aov(count ~ season + weekend + hour,
+          data = df_hr)
+
+summary(m5)
+
+m6 <- aov(count ~ season + weekend + peak2,
+          data = df_hr)
+
+summary(m6)
+
+m7 <- aov(count ~ season + weekend + peak3,
+          data = df_hr)
+
+summary(m7)
+
+AIC(m5, m6, m7)
+
+```
+
+Yes, the lower AIC for m6 (with peak, not hour) indicates that this better represents the variation in the data compared to the hour variable. We also want to know specifically if there are differences in this intra-day variation by season. The yet-lower AIC for m7 indicates that `peak3` is a better description of the intra-day fluctuation than `peak2`.
+
+```{r intra_analysis_interax, echo = T}
+# With season x peak interaction
+
+m8 <- aov(count ~ season + weekend + peak2 + season:peak2,
+          data = df_hr)
+summary(m8)
+# Adding weekend x peak interaction as well
+m9 <- aov(count ~ season + weekend + peak2 + weekend:peak2 + season:peak2,
+          data = df_hr)
+
+summary(m9)
+
+AIC(m7, m8, m9)
+
+
+# Using 3 period peak variable
+m10 <- aov(count ~ season + weekend + peak3 + season:peak3,
+          data = df_hr)
+summary(m10)
+# Adding weekend x peak interaction as well
+m11 <- aov(count ~ season + weekend + peak3 + weekend:peak3 + season:peak3,
+          data = df_hr)
+
+summary(m11)
+
+# Akaike Information Criterion
+
+AIC(m7, m10, m11)
+
+
+```
+
+The model which includes both interactions (season x peak and weekend x peak) is a much better model than with just season x peak or no interactions, using `peak3` as our categorization of variation within a day. This is the model we can use to generate estimates of NOTAM workload going forward.
+
+# Generating estimates
+
+Given this model, now we can estimate the expected hourly counts of NOTAMs by season, weekend/weekday, and intra-day period. 
+
+The table below shows the model predictions for an hour within 
+
+```{r estimates}
+pred_dat  = data.frame(season = gl(4, 2*3, labels = levels(df_hr$season)),
+                       weekend = rep(gl(2, 1, labels = levels(df_hr$weekend)), 4*3),
+                       peak3 = rep(gl(3, 2, labels = unique(df_hr$peak3)), 2*2))
+
+pred11 <- predict(m11, 
+                  newdata = pred_dat,
+                  se.fit = T)
+
+# Creating a variable to represent the number of hours each of these periods; we will used this to calculate SD from SE
+
+n_hr = pred_dat$peak3 
+levels(n_hr) = c(9, 6, 9)
+n_hr = as.numeric(as.character(n_hr))
+
+pred <- data.frame(pred_dat,
+                   Estimate = pred11$fit,
+                   # StdErr = pred11$se.fit,
+                   SD = pred11$se.fit * sqrt(n_hr))
+
+# Adding percentiles. Since these are normal distributions, we use the following multipliers of the standard deviation to compute percentiles
+# 2.5/ 97.5 = 1.96
+# 5  / 95 = 1.645
+# 10 / 90 = 1.282
+
+pred <- pred %>%
+  mutate(Est_95 = Estimate + 1.645 * SD,
+         Est_5 = Estimate - 1.645 * SD)
+
+pred <- pred[order(pred$season,
+                   pred$weekend,
+                   pred$peak3),]
+
+names(pred) = c('Season', 'Weekend/Day', 'Intra-Day Period',
+                'Estimate',
+                'StdDev', '95th Percentile', '5th Percentile')
+
+knitr::kable(pred,
+      caption = "Estimated counts of NOTAMS per hour by season, weekend/weekday, and intra-day period",
+      digits = 2) %>% 
+  kable_styling(bootstrap_options = c('striped','hover'))
+```
+
+WE can use this model to then generate estimates at a higher level, for example for a typical weekend or weekday in a given season.
+
+```{r example_days}
+
+# Weekday in Fall.
+# Off peak x 9 hours
+# Valley x 6 hours
+# Peak x 9 hours 
+predx <- pred[pred[,1] == 'Fall' & pred[,2] == 'Weekday',]
+
+ex = predx[predx[,3] == 'off-peak', 'Estimate'] * 9 +
+  predx[predx[,3] == 'valley', 'Estimate'] * 6 + 
+  predx[predx[,3] == 'peak', 'Estimate'] * 9
+
+err_ex = predx[predx[,3] == 'off-peak', 'StdDev'] * 9 +
+  predx[predx[,3] == 'valley', 'StdDev'] * 6 + 
+  predx[predx[,3] == 'peak', 'StdDev'] * 9
+
+```
+
+A typical weekday in fall, for example, would therefore be expected to have `r round(ex, 1)` +- `r round(err_ex, 1)` NOTAMs over the course of the day.
+
+For all season x weekend/weekay combinations, the estimates over the course of a day are as follows:
+
+```{r estimates2}
+
+n_hr = pred$`Intra-Day Period` 
+levels(n_hr) = c(9, 6, 9)
+n_hr = as.numeric(as.character(n_hr))
+
+pred_tab = pred %>%
+  mutate(Est_day = Estimate * n_hr,
+         SD_day = StdDev * n_hr) %>%
+  group_by(Season, `Weekend/Day`) %>%
+  summarize(Estimate = sum(Est_day),
+            SD = sum(SD_day))
+
+pred_tab = pred_tab %>% 
+  mutate(`95th Percentile` = Estimate + 1.645 * SD,
+         `5th Percentile` = Estimate - 1.645 * SD)
+
+kable(pred_tab,
+      caption = "Estimated counts of NOTAMS per day by season and weekend/weekday",
+      digits = 2) %>% 
+  kable_styling(bootstrap_options = c('striped','hover'))
+```
