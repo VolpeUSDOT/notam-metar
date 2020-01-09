@@ -1,3 +1,5 @@
+load("NOTAM_Freq.RData")
+
 min_time_on_call_worker <- 4L
 block_size <- min_time_on_call_worker
 top_block_list_size <- 10
