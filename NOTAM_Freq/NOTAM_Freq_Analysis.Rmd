@@ -35,7 +35,7 @@ library(kableExtra)# for better tables
 workingdir <- ifelse(grepl('flynn', system('whoami', intern = T)),
                      "~/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
                      #"H:/Consult/NOTAM + METAR/NOTAM_Freq",
-                     "<Put_Your_Path_Here>")
+                     "C:/Users/Tema.Nwana/Downloads")
 
 setwd(workingdir)
 # knitr::opts_knit$set(root.dir = workingdir)
