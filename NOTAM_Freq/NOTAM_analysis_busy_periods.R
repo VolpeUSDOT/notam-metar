@@ -1,9 +1,10 @@
 load("NOTAM_Freq.RData")
 library(ggplot2)
 
-min_time_on_call_worker <- 4L
-block_size <- min_time_on_call_worker
-top_block_list_size <- 50
+#begin: busy period search parameters
+min_hours_on_call_worker <- 4L
+block_size <- min_hours_on_call_worker
+top_block_list_size <- 25L
 
 study_start <- min(UniqueInteractions$datetimes)
 study_length <- as.integer(1 + difftime(max(UniqueInteractions$datetimes), study_start, units = "hours"))
@@ -11,6 +12,7 @@ study_length <- as.integer(1 + difftime(max(UniqueInteractions$datetimes), study
 hourly_bin_start <- c(seq(1, study_length))
 hourly_bin_start <- as.POSIXct((hourly_bin_start-1)*(60*60) + study_start, origin = "1970-01-01", tz = "UTC")
 hourly_bin_end <- hourly_bin_start + 60*60
+#end: busy period search parameters
 
 df = 
   # head(
@@ -50,33 +52,7 @@ for(j in 2:(top_block_list_size)){
       # )
 }
 
-busy_periods <- orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ]
+busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
 print(busy_periods)
 
-cumulative_count <- vector()
-for(k in 1:top_block_list_size){
-  cumulative_count[k] = sum(busy_periods$block_count <= busy_periods$block_count[k])
-  y <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$year + 1900
-  m <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mon + 1
-  d <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mday
-  bod <- as.POSIXct(
-      # print(
-        paste(y, m, d, sep = "-")
-      # )
-    , tz = "UTC")
-  eod <- bod + 60*60*24
-  print(ggplot2::qplot(data = orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod, ], x = hourly_bin_start, y = block_count))
-  
-}
 
-busy_periods <- cbind(busy_periods, cumulative_count)
-
-p <- ggplot(data = busy_periods)
-print(p 
-      + geom_point(aes(x = block_count, y = cumulative_count/top_block_list_size)) 
-      + geom_line(aes(x = block_count, y = cumulative_count/top_block_list_size)) 
-      + xlab("NOTAMs per 4-hour block") 
-      + ylab("Share of busiest blocks having equal or fewer NOTAMs")
-      + labs(title = "Busiest 4-hour blocks as a Cumulative Distribution Function")
-      )
-ggsave("NOTAM_busy_periods_CDF.png", width = 10, height = 5)
