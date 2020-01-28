@@ -1,4 +1,19 @@
+# Setup ----
+# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
+
+working_dir <- ifelse(grepl('Dan', path.expand('~/')),
+                      'H:/Consult/NOTAM + METAR/NOTAM_Freq',
+                      '<you_path_here>')
+
+setwd(working_dir)
+
+if(!file.exists("NOTAM_Freq_w_busy_days.RData")){
+  cat('Attempting to source the script to generate busy_periods data frame')
+  source('NOTAM_analysis_busy_periods.R')
+}
+
 load("NOTAM_Freq_w_busy_days.RData")
+
 library(ggplot2)
 library(grid)
 library(gridExtra)
@@ -6,10 +21,12 @@ library(gtable)
 library(dplyr)
 library(reshape2)
 
+# Define functions ----
+
 compute_staff_reqd <- function(day) {
   
   #begin: staffing paramaters
-  average_NOTAM_processing_time_in_minutes <- 3 #per Bruce W, each processor can process 480 NOTAMs per day
+  average_NOTAM_processing_time_in_minutes <- 3 # per Bruce W, each processor can process 480 NOTAMs per day
   nominal_staffing_level <- 10
   # day = as.Date("2019-08-07", tz = "UTC") #testing
   #end: staffing parameters
@@ -74,6 +91,8 @@ compute_staff_reqd <- function(day) {
   # grid.draw(g)
   #end: plot cumulative curves with estimated instantaneous staffing level
 }
+
+# Run busy day analysis ----
 
 number_of_busy_days_to_analyze <- 5 #top_block_list_size
 

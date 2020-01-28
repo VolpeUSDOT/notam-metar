@@ -1,7 +1,17 @@
+# Setup ----
+# Set working directory to location where NOTAM_Freq.RData exists
+
+working_dir <- ifelse(grepl('Dan', path.expand('~/')),
+                      'H:/Consult/NOTAM + METAR/NOTAM_Freq',
+                      '<you_path_here>')
+
+setwd(working_dir)
+
 load("NOTAM_Freq.RData")
 library(ggplot2)
 
-#begin: busy period search parameters
+# begin: busy period search parameters ----
+
 min_hours_on_call_worker <- 4L
 block_size <- min_hours_on_call_worker
 top_block_list_size <- 25L
@@ -55,4 +65,11 @@ for(j in 2:(top_block_list_size)){
 busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
 print(busy_periods)
 
+# Save output to working directory ----
+
+save(list = c('busy_periods',
+              'orig_df',
+              'allInteractions',
+              'UniqueInteractions'),
+     file = 'NOTAM_Freq_w_busy_days.RData')
 
