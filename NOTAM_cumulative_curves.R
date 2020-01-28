@@ -23,11 +23,10 @@ library(reshape2)
 
 # Define functions ----
 
-compute_staff_reqd <- function(day) {
+compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level = 10) {
   
-  #begin: staffing paramaters
-  average_NOTAM_processing_time_in_minutes <- 3 # per Bruce W, each processor can process 480 NOTAMs per day
-  nominal_staffing_level <- 10
+  #begin: staffing paramaters. These are now arguments in the function
+  average_NOTAM_processing_time_in_minutes <- processing_time # Defaults to 3 min, per Bruce W, each processor can process 480 NOTAMs per day
   # day = as.Date("2019-08-07", tz = "UTC") #testing
   #end: staffing parameters
   
@@ -75,7 +74,8 @@ compute_staff_reqd <- function(day) {
     scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Processed")) +
     scale_linetype_discrete() + # scale_linetype_discrete(name = NULL, labels = c(NULL, NULL)) +
     theme(legend.position = "top") +
-    ylab("Cumulative NOTAMs")
+    ylab("Cumulative NOTAMs") +
+    ggtitle(day)
     
   print(pc)
   
@@ -94,23 +94,41 @@ compute_staff_reqd <- function(day) {
 
 # Run busy day analysis ----
 
-number_of_busy_days_to_analyze <- 5 #top_block_list_size
+number_of_busy_days_to_analyze <- 5 # top_block_list_size
+
+# save to PDF
+pdf('NOTAM_Cumulative_Curves.pdf', width = 8, height = 8)
 
 for(k in number_of_busy_days_to_analyze:1){
+  # k = 1
   busy_periods$cumulative_count[k] = sum(busy_periods$block_count <= busy_periods$block_count[k])
   y <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$year + 1900
   m <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mon + 1
   d <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mday
+  
+  # Create beginning-of-day and end-of-day values for this day
   bod <- as.POSIXct(
     # print(
     paste(y, m, d, sep = "-")
     # )
     , tz = "UTC")
   eod <- bod + 60*60*24
-  print(ggplot2::qplot(data = orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod, ], x = hourly_bin_start, y = block_count))
+
+  gp <- ggplot(data = orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod, ],
+         aes(x = hourly_bin_start,
+             y = block_count)) +
+    geom_point() +
+    geom_line() +
+    ggtitle(paste(bod, ' Rank:', busy_periods$block_rank_descending[k])) +
+    theme_bw()
+                    
+  print(gp)
+  
   day = as.Date(bod)
   compute_staff_reqd(day)  
 }
+
+dev.off(); system('open NOTAM_Cumulative_Curves.pdf')
 
 p <- ggplot(data = busy_periods)
 print(p 
