@@ -158,3 +158,34 @@ save(list = c('busy_periods',
               'UniqueInteractions'),
      file = 'NOTAM_Freq_w_busy_days.RData')
 
+# Plot staffing models ----
+
+ggplot(orig_df %>% filter(hourly_bin_start > '2017-12-31' & hourly_bin_start <= '2018-12-31'), aes(x = hourly_bin_start)) + 
+  geom_line(aes(y = dynam_model_1)) +
+  #facet_wrap(~season + weekend)
+  facet_wrap(~weekend)
+
+# Example weeks
+start1 = as.POSIXct('2018-01-01')
+start2 = as.POSIXct('2018-04-01')
+start3 = as.POSIXct('2018-07-01')
+start4 = as.POSIXct('2018-10-01')
+
+
+ex_weeks = c(seq(start1, start1 + 7 * 24 * 60 * 60, by = 24 * 60 * 60),
+            seq(start2, start2 + 7 * 24 * 60 * 60, by = 24 * 60 * 60),
+            seq(start3, start3 + 7 * 24 * 60 * 60, by = 24 * 60 * 60), 
+            seq(start4, start4 + 7 * 24 * 60 * 60, by = 24 * 60 * 60)
+            )
+
+gp1 <- ggplot(orig_df %>% filter(format(hourly_bin_start, '%Y-%m-%d') %in% as.character(ex_weeks)), aes(x = hourly_bin_start)) + 
+  geom_line(aes(y = dynam_model_1), size = 2, col = 'darkred', alpha = 0.6) + 
+  geom_line(aes(y = dynam_model_2), size = 2, col = 'darkblue', alpha = 0.6) + 
+  # geom_line(aes(y = uniform_2), size = 1.2, col = 'grey20') + 
+  # geom_line(aes(y = uniform_5), size = 1.2, col = 'grey80') + 
+  theme_bw() +
+  ylab('Staff') + xlab('Date') +
+  ggtitle('Visualization of two staffing models for example weeks in each season \n Red = Round-down, Blue = Round-up') +
+  facet_wrap(~season, scales = 'free_x') 
+
+ggsave(filename = 'NOTAM_Staffing_Models.png', width = 8, height = 6)
