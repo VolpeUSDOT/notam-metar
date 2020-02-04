@@ -1,5 +1,11 @@
+# Overview ----
+# This calculates 'busy periods' in the NOTAM data by calculating how many NOTAMs per hour are incoming. 
+# In addition, this script also builts off of the output of the models in NOTAM_Freq_Analysis.Rmd to estimate the intraday, seasonal, and weekend/weekday effect. We will use this for generating staffing models.
+
+
 # Setup ----
 # Set working directory to location where NOTAM_Freq.RData exists
+
 
 working_dir <- ifelse(grepl('Dan', path.expand('~/')),
                       'H:/Consult/NOTAM + METAR/NOTAM_Freq',
@@ -8,7 +14,9 @@ working_dir <- ifelse(grepl('Dan', path.expand('~/')),
 setwd(working_dir)
 
 load("NOTAM_Freq.RData")
-library(ggplot2)
+load('NOTAM_Freq_Model_Out.RData')
+
+library(tidyverse) # for ggplot2 + dplyr
 
 # begin: busy period search parameters ----
 
@@ -81,6 +89,66 @@ for(j in 2:(top_block_list_size)){
 
 busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
 print(busy_periods)
+
+
+# Adding staffing models ----
+
+# Add to orig_df the staffing models.
+# Staffing Models
+# - Uniform 5 - current, assuming 5 FTE staff always on 
+# - Uniform 2 - assume 2 FTE staff always on
+# - Dynamic Seasonal Round-Up - Use the values from the exploratory data analysis (NOTAM_Freq_Analysis.Rmd..) and get the staff needed for each time period by:
+#   ○ Season: Winter/Spring/Summer/Fall
+#   ○ Weekend/Weekday:
+#   ○ Off/Valley/Peak intraday
+#   ○ Round up the number of estimated NOTAMs, convert to integer number of staff required per hour, to completely cover the NOTAM per hour, even if excess capacity will accumulate
+# - Dynamic Seasonal Round-Down
+#    ○ Same as above, but when calculating staff required to cover NOTAMs per hour, allow for a backlog to potentially accumulate by rounding down to the next smallest integer number of staff required.
+# - Dynamic Aseasonal
+# Same as above, but without seasonal variation, only weekend/weekday and intraday
+
+uniform_5 = 5
+uniform_2 = 2
+
+# For the dynamic staffing models, we need to add season, weekend/weekday, and intraday periods to orig_df data frame.
+
+orig_df <- orig_df %>% 
+  mutate(dow = format(hourly_bin_start, '%A'),
+         hour = format(hourly_bin_start, '%H'),
+         weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 'Weekend', 'Weekday')),
+         month   = format(hourly_bin_start, '%m'),
+         season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
+                                    ifelse(month == '03' | month == '04' | month == '05', 'Spring',
+                                           ifelse(month == '06' | month == '07' | month == '08', 'Summer',
+                                                  ifelse(month == '09' | month == '10' | month == '11', 'Fall', NA))))),  
+         peak2 = ifelse(hour >= 13 & hour <= 21, 'peak', 'off-peak'),
+         peak3 = ifelse(hour >= 13 & hour <= 21, 'peak', 
+                        ifelse(hour >= 5 & hour <= 10, 'valley', 'off-peak'))
+         )
+          
+
+# Assume 3 min per NOTAM. For dyanmic staffing model round down, we take the estimated number of NOTAMs per hour from pred, multiply by 3 minutes, and use modulo division (integer) by 60 min to get the number of staff required at a minimum for that hour.
+# if integer division results in 0, increment to 1.
+# For conservative 'round up' model, take ceiling() of the NOTMAMs per hour * 3 min first, then divide by 60 min, then take ceiling of the result.
+
+dynam_model_1 = ( pred$Estimate * 3 ) %/% 60
+dynam_model_1[dynam_model_1 == 0] = 1
+
+dynam_model_2 = ceiling( ( ceiling(pred$Estimate) * 3 ) / 60 )
+dynam_model_2[dynam_model_2 == 0] = 1
+
+pred = data.frame(pred, dynam_model_1, dynam_model_2)
+
+orig_df <- left_join(orig_df, pred %>% select(Season,
+                                          Weekend.Day,
+                                          Intra.Day.Period,
+                                          dynam_model_1,
+                                          dynam_model_2),
+                 by = c("season" = "Season",
+                        "weekend" = "Weekend.Day",
+                        "peak3" = "Intra.Day.Period"))
+
+orig_df <- data.frame(orig_df, uniform_5, uniform_2)
 
 # Save output to working directory ----
 
