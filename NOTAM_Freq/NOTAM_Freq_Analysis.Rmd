@@ -33,7 +33,7 @@ library(kableExtra)# for better tables
 
 # Working directory: This sets the path to my H: drive if being run from my computer, otherwise put in your own path
 workingdir <- ifelse(grepl('flynn', system('whoami', intern = T)),
-                     "~/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
+                     "~/Temp_Working_Docs/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
                      #"H:/Consult/NOTAM + METAR/NOTAM_Freq",
                      "<Put_Your_Path_Here>")
 
@@ -517,4 +517,42 @@ kable(pred_tab,
       caption = "Estimated counts of NOTAMS per day by season and weekend/weekday",
       digits = 2) %>% 
   kable_styling(bootstrap_options = c('striped','hover'))
+```
+
+For all intraday x weekend/weekay combinations, the estimates over the course of a day are as follows:
+
+```{r estimates3}
+
+n_hr = pred$`Intra-Day Period` 
+levels(n_hr) = c(9, 6, 9)
+n_hr = as.numeric(as.character(n_hr))
+
+pred_tab3 = pred %>%
+  mutate(Est_day = Estimate * n_hr,
+         SD_day = StdDev * n_hr) %>%
+  group_by(Season, `Weekend/Day`) %>%
+  summarize(Estimate = sum(Est_day),
+            SD = sum(SD_day))
+
+pred_tab3 = pred_tab3 %>% 
+  mutate(`95th Percentile` = Estimate + 1.645 * SD,
+         `5th Percentile` = Estimate - 1.645 * SD)
+
+kable(pred_tab3,
+      caption = "Estimated counts of NOTAMS per day by intra-day period and weekend/weekday",
+      digits = 2) %>% 
+  kable_styling(bootstrap_options = c('striped','hover'))
+```
+
+Save the outputs for busy period work.
+
+```{r save}
+save(file = 'NOTAM_Freq_Model_Out.RData',
+     list = c('pred',
+              'pred_tab',
+              'pred_tab3',
+              'hr_tab',
+              'm11')
+     )
+
 ```
