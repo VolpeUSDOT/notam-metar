@@ -1,9 +1,9 @@
 # Setup ----
 # Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
 
-working_dir <- ifelse(grepl('Dan', path.expand('~/')),
-                      'H:/Consult/NOTAM + METAR/NOTAM_Freq',
-                      '<you_path_here>')
+working_dir <- ifelse(grepl('lylet', path.expand('~/')),
+                      'C:/Users/lylet/OneDrive/Documents/NOTAM/input_output',
+                      '~/OneDrive/Documents/NOTAM/input_output')
 
 setwd(working_dir)
 
@@ -23,10 +23,10 @@ library(reshape2)
 
 # Define functions ----
 
-compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level = 10) {
+compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff_model) {
   
   #begin: staffing paramaters. These are now arguments in the function
-  average_NOTAM_processing_time_in_minutes <- processing_time # Defaults to 3 min, per Bruce W, each processor can process 480 NOTAMs per day
+  average_NOTAM_processing_time_in_minutes <- processing_time_in_minutes # Defaults to 3 min, per Bruce W, each processor can process 480 NOTAMs per day
   # day = as.Date("2019-08-07", tz = "UTC") #testing
   #end: staffing parameters
   
@@ -39,7 +39,12 @@ compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level 
   
   minute <- day_as_datetime + (minute-1)*60
   capacity_in_NOTAMs_per_minute_per_staff <- 1 / average_NOTAM_processing_time_in_minutes 
-  s_df <- data.frame(minute, msgs_in_queue = -1, arrivals, msgs_processed, staff_required, staff_available = nominal_staffing_level, capacity = capacity_in_NOTAMs_per_minute_per_staff * nominal_staffing_level)
+  minutes_per_hour = 60L
+  minute_by_minute_staff_model = rep(hourly_staff_model, minutes_per_hour)
+
+  s_df <- data.frame(minute, msgs_in_queue = -1, arrivals, msgs_processed, staff_required = NA, staff_available = minute_by_minute_staff_model, capacity = -1)
+  
+  s_df$capacity = s_df$staff_available * capacity_in_NOTAMs_per_minute_per_staff
   
   for(n in 1:minutes_per_day){
     s_df$arrivals[n] = sum(arrivals_on_day$datetimes == s_df$minute[n])
@@ -48,11 +53,8 @@ compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level 
       s_df$msgs_in_queue[n] = max(0, s_df$arrivals[n] - s_df$capacity[n])
       s_df$msgs_processed[n] = s_df$cml_msgs_processed[n] = min(s_df$arrivals[n], s_df$capacity[n])
     }
-    # s_df$newly_arriving_msgs_processed[n] = min(s_df$arrivals[n], s_df$capacity[n])
   }
   
-  # s_df$newly_arriving_msgs_left_in_queue_unprocessed = s_df$arrivals - s_df$new_msgs_processed 
-  # 
   for(n in 2:minutes_per_day){
     s_df$msgs_processed[n] = min(s_df$capacity[n], s_df$arrivals[n] + s_df$msgs_in_queue[n-1])
     s_df$cml_msgs_processed[n] = s_df$cml_msgs_processed[n-1] + s_df$msgs_processed[n]  
@@ -63,6 +65,7 @@ compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level 
   
   s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_processed"))
   
+  # print(head(s_df_long))
   #begin: plot cumulative curves with estimated instantaneous staffing level
   p <- ggplot(data = s_df_long) + xlab("minute") 
   
@@ -90,11 +93,11 @@ compute_staff_reqd <- function(day, processing_time = 3, nominal_staffing_level 
   # grid.newpage()
   # grid.draw(g)
   #end: plot cumulative curves with estimated instantaneous staffing level
-}
+  }
 
 # Run busy day analysis ----
 
-number_of_busy_days_to_analyze <- 5 # top_block_list_size
+number_of_busy_days_to_analyze <- 1 # top_block_list_size
 
 # save to PDF
 pdf('NOTAM_Cumulative_Curves.pdf', width = 8, height = 8)
@@ -125,7 +128,10 @@ for(k in number_of_busy_days_to_analyze:1){
   print(gp)
   
   day = as.Date(bod)
-  compute_staff_reqd(day)  
+  hourly_staff_models = c("dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_5", "uniform_2")
+  for(x in 1:length(staff_models)){
+    compute_staff_reqd(day, processing_time_in_minutes = 3, orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod,hourly_staff_models[x]] )  
+  }
 }
 
 dev.off(); system('open NOTAM_Cumulative_Curves.pdf')
