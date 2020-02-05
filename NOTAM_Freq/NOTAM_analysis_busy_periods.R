@@ -128,8 +128,9 @@ orig_df <- orig_df %>%
           
 
 # Assume 3 min per NOTAM. For dyanmic staffing model round down, we take the estimated number of NOTAMs per hour from pred, multiply by 3 minutes, and use modulo division (integer) by 60 min to get the number of staff required at a minimum for that hour.
-# if integer division results in 0, increment to 1.
+# Allow periods of 0 staff in this model.
 # For conservative 'round up' model, take ceiling() of the NOTMAMs per hour * 3 min first, then divide by 60 min, then take ceiling of the result.
+# if integer division results in 0, increment to 1.
 
 dynam_model_1 = ( pred$Estimate * 3 ) %/% 60
 dynam_model_1[dynam_model_1 == 0] = 1
@@ -137,13 +138,25 @@ dynam_model_1[dynam_model_1 == 0] = 1
 dynam_model_2 = ceiling( ( ceiling(pred$Estimate) * 3 ) / 60 )
 dynam_model_2[dynam_model_2 == 0] = 1
 
+# Also make aseasonal dynamic model. Could do floor or ceiling, or both, here just doing round for now
+pred_aseason = pred %>%
+  group_by(`Intra-Day Period`, `Weekend/Day`) %>%
+  summarize(Estimate = mean(Estimate),
+            SD = mean(StdDev)) %>%
+  mutate(dynam_model_3 = round( (Estimate * 3 ) / 60 ))
+
+pred_aseason$dynam_model_3[pred_aseason$dynam_model_3 == 0] = 1
+
+pred = left_join(pred, pred_aseason %>% select(`Intra-Day Period`, `Weekend/Day`, dynam_model_3))
+
 pred = data.frame(pred, dynam_model_1, dynam_model_2)
 
 orig_df <- left_join(orig_df, pred %>% select(Season,
                                           Weekend.Day,
                                           Intra.Day.Period,
                                           dynam_model_1,
-                                          dynam_model_2),
+                                          dynam_model_2,
+                                          dynam_model_3),
                  by = c("season" = "Season",
                         "weekend" = "Weekend.Day",
                         "peak3" = "Intra.Day.Period"))
@@ -167,25 +180,42 @@ ggplot(orig_df %>% filter(hourly_bin_start > '2017-12-31' & hourly_bin_start <= 
 
 # Example weeks
 start1 = as.POSIXct('2018-01-01')
-start2 = as.POSIXct('2018-04-01')
-start3 = as.POSIXct('2018-07-01')
+start2 = as.POSIXct('2018-04-02')
+start3 = as.POSIXct('2018-07-02')
 start4 = as.POSIXct('2018-10-01')
 
 
-ex_weeks = c(seq(start1, start1 + 7 * 24 * 60 * 60, by = 24 * 60 * 60),
-            seq(start2, start2 + 7 * 24 * 60 * 60, by = 24 * 60 * 60),
-            seq(start3, start3 + 7 * 24 * 60 * 60, by = 24 * 60 * 60), 
-            seq(start4, start4 + 7 * 24 * 60 * 60, by = 24 * 60 * 60)
+ex_weeks = c(seq(start1, start1 + 6 * 24 * 60 * 60, by = 24 * 60 * 60),
+            seq(start2, start2 + 6 * 24 * 60 * 60, by = 24 * 60 * 60),
+            seq(start3, start3 + 6 * 24 * 60 * 60, by = 24 * 60 * 60), 
+            seq(start4, start4 + 6 * 24 * 60 * 60, by = 24 * 60 * 60)
             )
 
 gp1 <- ggplot(orig_df %>% filter(format(hourly_bin_start, '%Y-%m-%d') %in% as.character(ex_weeks)), aes(x = hourly_bin_start)) + 
-  geom_line(aes(y = dynam_model_1), size = 2, col = 'darkred', alpha = 0.6) + 
-  geom_line(aes(y = dynam_model_2), size = 2, col = 'darkblue', alpha = 0.6) + 
+  geom_line(aes(y = dynam_model_1), size = 1.2, col = 'darkred', alpha = 0.4) + 
+  geom_line(aes(y = dynam_model_2), size = 1.2, col = 'darkblue', alpha = 0.4) +
+  geom_line(aes(y = dynam_model_3), size = 1.2, col = 'darkgreen', alpha = 0.4) + 
+  # geom_line(aes(y = uniform_2), size = 1.2, col = 'grey20') + 
+  # geom_line(aes(y = uniform_5), size = 1.2, col = 'grey80') + 
+  theme_bw() +
+  ylab('Staff') + xlab('Date') +
+  ggtitle('Visualization of two staffing models for example weeks in each season \n Red = Round-down, Blue = Round-up, Green = Aseasonal') +
+  facet_wrap(~season, scales = 'free_x') 
+gp1
+
+ggsave(filename = 'NOTAM_Staffing_Models_all3.png', width = 8, height = 6)
+
+
+gp2 <- ggplot(orig_df %>% filter(format(hourly_bin_start, '%Y-%m-%d') %in% as.character(ex_weeks)), aes(x = hourly_bin_start)) + 
+  geom_line(aes(y = dynam_model_1), size = 1.2, col = 'darkred', alpha = 0.4) + 
+  geom_line(aes(y = dynam_model_2), size = 1.2, col = 'darkblue', alpha = 0.4) +
+#  geom_line(aes(y = dynam_model_3), size = 1.2, col = 'darkgreen', alpha = 0.4) + 
   # geom_line(aes(y = uniform_2), size = 1.2, col = 'grey20') + 
   # geom_line(aes(y = uniform_5), size = 1.2, col = 'grey80') + 
   theme_bw() +
   ylab('Staff') + xlab('Date') +
   ggtitle('Visualization of two staffing models for example weeks in each season \n Red = Round-down, Blue = Round-up') +
   facet_wrap(~season, scales = 'free_x') 
+gp2
 
-ggsave(filename = 'NOTAM_Staffing_Models.png', width = 8, height = 6)
+ggsave(filename = 'NOTAM_Staffing_Models_2.png', width = 8, height = 6)
