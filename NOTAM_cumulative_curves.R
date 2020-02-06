@@ -67,12 +67,16 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
 
   # begin: build up time-in-system distribution
   message_count = data.frame(message_count = seq(1:max(s_df$cml_arrivals)))
-  print(head(s_df)) #testing purposes
+  # print(s_df[900:1080,]) #testing purposes
+  s_df_arrivals = s_df %>% select(cml_arrivals, minute) %>% group_by(cml_arrivals) %>% mutate(earliest = rank(minute) == 1) %>% filter(earliest == TRUE)
+  s_df_msgs_processed = s_df %>% mutate(cml_msgs_processed = round(cml_msgs_processed)) %>% select(cml_msgs_processed, minute) %>% group_by(cml_msgs_processed) %>% mutate(earliest = rank(minute) == 1) %>% filter(earliest == TRUE)
   s_df_new = message_count %>% 
-    left_join(s_df[,c("cml_arrivals", "minute")], by = c("message_count" = "cml_arrivals")) %>% 
-    left_join(s_df[,c("cml_msgs_processed", "minute")], by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
+    left_join(s_df_arrivals, by = c("message_count" = "cml_arrivals")) %>% 
+    left_join(s_df_msgs_processed, by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
     fill(minute.arrivals, minute.msgs_processed, .direction = "up")
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
+  print(s_df_new[which.max(s_df_new$time_in_system),]) 
+  # print(s_df_new[700:900, ]) #testing
   average_minutes_in_system = sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute
   max_minutes_in_system = max(s_df_new$time_in_system) / seconds_per_minute
   # end: build up time-in-system distribution
@@ -105,7 +109,7 @@ number_of_busy_days_to_analyze <- top_block_list_size
 # save to PDF
 pdf('NOTAM_Cumulative_Curves.pdf', width = 8, height = 8)
 
-for(k in number_of_busy_days_to_analyze:1){
+for(k in top_block_list_size:(top_block_list_size-number_of_busy_days_to_analyze+1)){
   # k = 1
   y <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$year + 1900
   m <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mon + 1
