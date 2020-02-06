@@ -20,6 +20,7 @@ library(gridExtra)
 library(gtable)
 library(dplyr)
 library(reshape2)
+library(tidyr)
 
 # Define functions ----
 
@@ -40,8 +41,9 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   minute <- day_as_datetime + (minute-1)*60
   capacity_in_NOTAMs_per_minute_per_staff <- 1 / average_NOTAM_processing_time_in_minutes 
   minutes_per_hour = 60L
-  minute_by_minute_staff_model = rep(hourly_staff_model, minutes_per_hour)
-
+  seconds_per_minute = 60L
+  minute_by_minute_staff_model = rep(hourly_staff_model, each = minutes_per_hour)
+  
   s_df <- data.frame(minute, msgs_in_queue = -1, arrivals, msgs_processed, staff_required = NA, staff_available = minute_by_minute_staff_model, capacity = -1)
   
   s_df$capacity = s_df$staff_available * capacity_in_NOTAMs_per_minute_per_staff
@@ -61,12 +63,23 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     s_df$msgs_in_queue[n] = s_df$cml_arrivals[n] - s_df$cml_msgs_processed[n] 
   }
   
-  s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
-  
+  # s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
+
+  # begin: build up time-in-system distribution
+  message_count = data.frame(message_count = seq(1:max(s_df$cml_arrivals)))
+  print(head(s_df)) #testing purposes
+  s_df_new = message_count %>% 
+    left_join(s_df[,c("cml_arrivals", "minute")], by = c("message_count" = "cml_arrivals")) %>% 
+    left_join(s_df[,c("cml_msgs_processed", "minute")], by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
+    fill(minute.arrivals, minute.msgs_processed, .direction = "up")
+  s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
+  average_minutes_in_system = sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute
+  max_minutes_in_system = max(s_df_new$time_in_system) / seconds_per_minute
+  # end: build up time-in-system distribution
+    
   s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_processed"))
   
-  # print(head(s_df_long))
-  #begin: plot cumulative curves with estimated instantaneous staffing level
+  #begin: plot cumulative curves
   p <- ggplot(data = s_df_long) + xlab("minute") 
   
   pc <- p + 
@@ -75,36 +88,25 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     geom_step() + 
     guides(colour = "legend", linetype = FALSE) +
     scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Processed")) +
-    scale_linetype_discrete() + # scale_linetype_discrete(name = NULL, labels = c(NULL, NULL)) +
+    scale_linetype_discrete() +
     theme(legend.position = "top") +
     ylab("Cumulative NOTAMs") +
-    ggtitle(day)
-    
-  print(pc)
-  
-  # ps <- p + 
-  #   geom_point(aes(x = minute, y = staff_required)) + 
-  #   ylab("instantaneous staffing requirement")
-  
-  # g1 <- ggplotGrob(pc)
-  # g2 <- ggplotGrob(ps)
-  # g <- rbind(g1, g2, size = "first")
-  # g$widths <- unit.pmax(g1$widths, g2$widths)
-  # grid.newpage()
-  # grid.draw(g)
-  #end: plot cumulative curves with estimated instantaneous staffing level
+    labs(
+      subtitle = (paste("Average minutes in system: ", average_minutes_in_system, "; Max minutes in system: ", max_minutes_in_system))
+    )
+  return(pc)
+  # end: plot cumulative curves
   }
 
 # Run busy day analysis ----
-
-number_of_busy_days_to_analyze <- 1 # top_block_list_size
+top_block_list_size = nrow(busy_periods)
+number_of_busy_days_to_analyze <- top_block_list_size
 
 # save to PDF
 pdf('NOTAM_Cumulative_Curves.pdf', width = 8, height = 8)
 
 for(k in number_of_busy_days_to_analyze:1){
   # k = 1
-  busy_periods$cumulative_count[k] = sum(busy_periods$block_count <= busy_periods$block_count[k])
   y <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$year + 1900
   m <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mon + 1
   d <- as.POSIXlt.POSIXct(busy_periods$hourly_bin_start[k])$mday
@@ -125,16 +127,25 @@ for(k in number_of_busy_days_to_analyze:1){
     ggtitle(paste(bod, ' Rank:', busy_periods$block_rank_descending[k])) +
     theme_bw()
                     
-  print(gp)
+  # print(gp)
   
   day = as.Date(bod)
-  hourly_staff_models = c("dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_5", "uniform_2")
-  for(x in 1:length(staff_models)){
-    compute_staff_reqd(day, processing_time_in_minutes = 3, orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod,hourly_staff_models[x]] )  
+  hourly_staff_models = ("uniform_5")
+  hourly_staff_models = c(hourly_staff_models, "dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_2")
+  for(x in 1:length(hourly_staff_models)){
+    hourly_staff_model = orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod,hourly_staff_models[x]]
+    print(hourly_staff_model)
+    pc = compute_staff_reqd(day, processing_time_in_minutes = 3, hourly_staff_model)  
+    pc = pc + labs(title = paste(day, hourly_staff_models[x]))
+    print(pc)
   }
 }
 
 dev.off(); system('open NOTAM_Cumulative_Curves.pdf')
+
+for (i in 1:top_block_list_size){
+  busy_periods$cumulative_count[i] = sum(busy_periods$block_count <= busy_periods$block_count[i])
+}
 
 p <- ggplot(data = busy_periods)
 print(p 
