@@ -44,7 +44,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   seconds_per_minute = 60L
   minute_by_minute_staff_model = rep(hourly_staff_model, each = minutes_per_hour)
   
-  s_df <- data.frame(minute, msgs_in_queue = -1, arrivals, msgs_processed, staff_required = NA, staff_available = minute_by_minute_staff_model, capacity = -1)
+  s_df <- data.frame(minute, msgs_in_queue = NaN, arrivals, msgs_processed, staff_required = NaN, staff_available = minute_by_minute_staff_model, capacity = -1)
   
   s_df$capacity = s_df$staff_available * capacity_in_NOTAMs_per_minute_per_staff
   
@@ -63,7 +63,8 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     s_df$msgs_in_queue[n] = s_df$cml_arrivals[n] - s_df$cml_msgs_processed[n] 
   }
   
-  # s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
+  s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
+  s_df$staff_doing_non_NOTAM_tasks = max(0, s_df$staff_available - s_df$staff_required)
 
   # begin: build up time-in-system distribution
   message_count = data.frame(message_count = seq(1:max(s_df$cml_arrivals)))
@@ -75,10 +76,11 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     left_join(s_df_msgs_processed, by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
     fill(minute.arrivals, minute.msgs_processed, .direction = "up")
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
-  print(s_df_new[which.max(s_df_new$time_in_system),]) 
+  # print(s_df_new[which.max(s_df_new$time_in_system),]) # testing
   # print(s_df_new[700:900, ]) #testing
-  average_minutes_in_system = sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute
+  average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute)
   max_minutes_in_system = max(s_df_new$time_in_system) / seconds_per_minute
+  staff_minutes_doing_non_NOTAM_tasks = sum(s_df$staff_doing_non_NOTAM_tasks)
   # end: build up time-in-system distribution
     
   s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_processed"))
@@ -96,7 +98,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     theme(legend.position = "top") +
     ylab("Cumulative NOTAMs") +
     labs(
-      subtitle = (paste("Average minutes in system: ", average_minutes_in_system, "; Max minutes in system: ", max_minutes_in_system))
+      subtitle = (paste("Average minutes in system: ", average_minutes_in_system, "; Max minutes in system: ", max_minutes_in_system, "; Staff minutes doing non-NOTAM tasks: ", staff_minutes_doing_non_NOTAM_tasks))
     )
   return(pc)
   # end: plot cumulative curves
@@ -107,7 +109,7 @@ top_block_list_size = nrow(busy_periods)
 number_of_busy_days_to_analyze <- top_block_list_size
 
 # save to PDF
-pdf('NOTAM_Cumulative_Curves.pdf', width = 8, height = 8)
+pdf('NOTAM_Cumulative_Curves.pdf', width = 10, height = 8)
 
 for(k in top_block_list_size:(top_block_list_size-number_of_busy_days_to_analyze+1)){
   # k = 1
