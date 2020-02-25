@@ -7,9 +7,9 @@
 # Set working directory to location where NOTAM_Freq.RData exists
 
 
-working_dir <- ifelse(grepl('Dan', path.expand('~/')),
-                      'H:/Consult/NOTAM + METAR/NOTAM_Freq',
-                      '<you_path_here>')
+working_dir <- ifelse(grepl('lylet', path.expand('~/')),
+                      'C:/Users/lylet/OneDrive/Documents/NOTAM/input_output',
+                      '~/OneDrive/Documents/NOTAM/input_output')
 
 setwd(working_dir)
 
@@ -20,16 +20,21 @@ library(tidyverse) # for ggplot2 + dplyr
 
 # begin: busy period search parameters ----
 
-min_hours_on_call_worker <- 4L
-block_size <- min_hours_on_call_worker
-top_block_list_size <- 25L
-
+#decide how much of the available data will be used for model building (versus model testing)
 study_start <- min(UniqueInteractions$datetimes)
-study_length <- as.integer(1 + difftime(max(UniqueInteractions$datetimes), study_start, units = "hours"))
+study_length_hours <- as.integer(1 + difftime(max(UniqueInteractions$datetimes), study_start, units = "hours"))
+
+share_of_study_for_model_building <- 0.5
+block_size_hours <- 1L # min_hours_on_call_worker <- 4L
+
+model_build_hours <- as.integer(study_length_hours * share_of_study_for_model_building)
+study_test_hours <- study_length_hours - model_build_hours
+
+top_block_list_size <- model_build_hours # 25L
 
 # For each hour of the study period, create two vectors. First is a vector of starting hours, second is a vector of ending hours. Difference between start and end is 60 minutes. 
-hourly_bin_start <- c(seq(1, study_length))
-hourly_bin_start <- as.POSIXct((hourly_bin_start-1)*(60*60) + study_start, origin = "1970-01-01", tz = "UTC")
+hourly_bin_start <-  c( seq( 1, model_build_hours ) )
+hourly_bin_start <- as.POSIXct((hourly_bin_start-1)*(60*60) + study_start + 60*60*model_build_hours, origin = "1970-01-01", tz = "UTC")
 hourly_bin_end <- hourly_bin_start + 60*60
 
 stopifnot(hourly_bin_end[1] - hourly_bin_start[1] == '1') 
@@ -52,11 +57,11 @@ if (!("hour_number" %in% colnames(UniqueInteractions))){
 # Loop through each row, and enumerate how many times that hour number occurs in the original data frame.
 # This at least could also be tidily-accomplished with UniqueInteractions %>% group_by(hour_number) %>% summarize(hourly_count = n())
 # However, the second part is to assess the block count, which is not so easy to calculate in a tidy way. Here, a loop over each row is a reasonable approach, although slow.
-# block_count = the count of NOTAMs for the block_size number of hours starting with this hour (default currently 4 hrs)
+# block_count = the count of NOTAMs for the block_size_hours number of hours starting with this hour (default currently 4 hrs)
 
 for(i in 1:nrow(df)){
   df$hourly_count[i] = sum(i == UniqueInteractions$hour_number)
-  df$block_count[i] = sum(i <= UniqueInteractions$hour_number & i + block_size > UniqueInteractions$hour_number)
+  df$block_count[i] = sum(i <= UniqueInteractions$hour_number & i + block_size_hours > UniqueInteractions$hour_number)
 }
 
 # set the values of block_rank_descending column to the rank of the block based on its block count (1 is highest count) 
@@ -69,27 +74,24 @@ df <- data.frame(orig_df)
 top_blocks = head(orig_df[order(df$block_rank_descending),], top_block_list_size)
 
 # Initialize the block start points, update to remove overlapping blocks from the top blocks list
+confirmed_blocks = data.frame()
 
-confirmed_blocks = 
-  # as.POSIXct(
-    top_blocks$hourly_bin_start[1]
-    # )
-
-last_confirmed_block = confirmed_blocks
-
-for(j in 2:(top_block_list_size)){
-  # filter the entire data frame for entries that conflict, append the top entry from the data frame
-  df <- df[abs(difftime(last_confirmed_block, df$hourly_bin_start, units = "hours")) > block_size, ]
+if(block_size_hours == 1){
+  busy_periods = confirmed_blocks = top_blocks
+  } else
+  {
+    confirmed_blocks = top_blocks$hourly_bin_start[1]
+    last_confirmed_block = confirmed_blocks
+    
+    for(j in 2:(top_block_list_size)){
+      # filter the entire data frame for entries that conflict, append the top entry from the data frame
+      df <- df[abs(difftime(last_confirmed_block, df$hourly_bin_start, units = "hours")) > block_size_hours, ]
+      last_confirmed_block = confirmed_blocks[j] = head(df$hourly_bin_start,1)
+    }
+    busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
+  }
   
-  last_confirmed_block = confirmed_blocks[j] = 
-    # as.POSIXct(
-      head(df$hourly_bin_start,1)
-      # )
-}
-
-busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
 print(busy_periods)
-
 
 # Adding staffing models ----
 
