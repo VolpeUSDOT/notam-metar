@@ -29,12 +29,13 @@ block_size_hours <- 1L # min_hours_on_call_worker <- 4L
 
 model_build_hours <- as.integer(study_length_hours * share_of_study_for_model_building)
 study_test_hours <- study_length_hours - model_build_hours
+offset <- 60*60*model_build_hours #0 for model build
 
 top_block_list_size <- model_build_hours # 25L
 
 # For each hour of the study period, create two vectors. First is a vector of starting hours, second is a vector of ending hours. Difference between start and end is 60 minutes. 
-hourly_bin_start <-  c( seq( 1, model_build_hours ) )
-hourly_bin_start <- as.POSIXct((hourly_bin_start-1)*(60*60) + study_start + 60*60*model_build_hours, origin = "1970-01-01", tz = "UTC")
+hourly_bin_start <-  c( seq( 1, model_build_hours ) ) #c( seq( model_build_hours + 1, study_length_hours) )
+hourly_bin_start <- as.POSIXct((hourly_bin_start-1)*(60*60) + study_start + offset, origin = "1970-01-01", tz = "UTC")
 hourly_bin_end <- hourly_bin_start + 60*60
 
 stopifnot(hourly_bin_end[1] - hourly_bin_start[1] == '1') 
@@ -45,7 +46,7 @@ stopifnot(hourly_bin_end[1] - hourly_bin_start[1] == '1')
 df = 
   # head(
   data.frame(hourly_bin_start, hourly_bin_end, hourly_count = -1, block_count = -1, block_rank_descending = -1)
-  # , 1000)
+# , 1000)
 
 # Create hour_number variable in the UniqueInteractions data frame if not already there, starting from datetimes.
 # The value of hour_number is the number of hours passed since the study_start time point
@@ -78,19 +79,19 @@ confirmed_blocks = data.frame()
 
 if(block_size_hours == 1){
   busy_periods = confirmed_blocks = top_blocks
-  } else
-  {
-    confirmed_blocks = top_blocks$hourly_bin_start[1]
-    last_confirmed_block = confirmed_blocks
-    
-    for(j in 2:(top_block_list_size)){
-      # filter the entire data frame for entries that conflict, append the top entry from the data frame
-      df <- df[abs(difftime(last_confirmed_block, df$hourly_bin_start, units = "hours")) > block_size_hours, ]
-      last_confirmed_block = confirmed_blocks[j] = head(df$hourly_bin_start,1)
-    }
-    busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
-  }
+} else
+{
+  confirmed_blocks = top_blocks$hourly_bin_start[1]
+  last_confirmed_block = confirmed_blocks
   
+  for(j in 2:(top_block_list_size)){
+    # filter the entire data frame for entries that conflict, append the top entry from the data frame
+    df <- df[abs(difftime(last_confirmed_block, df$hourly_bin_start, units = "hours")) > block_size_hours, ]
+    last_confirmed_block = confirmed_blocks[j] = head(df$hourly_bin_start,1)
+  }
+  busy_periods <- data.frame(cumulative_count = -1L, orig_df[orig_df$hourly_bin_start %in% as.vector(confirmed_blocks), ])
+}
+
 print(busy_periods)
 
 # Adding staffing models ----
@@ -100,12 +101,12 @@ print(busy_periods)
 # - Uniform 5 - current, assuming 5 FTE staff always on 
 # - Uniform 2 - assume 2 FTE staff always on
 # - Dynamic Seasonal Round-Up - Use the values from the exploratory data analysis (NOTAM_Freq_Analysis.Rmd..) and get the staff needed for each time period by:
-#   ○ Season: Winter/Spring/Summer/Fall
-#   ○ Weekend/Weekday:
-#   ○ Off/Valley/Peak intraday
-#   ○ Round up the number of estimated NOTAMs, convert to integer number of staff required per hour, to completely cover the NOTAM per hour, even if excess capacity will accumulate
+#   --Season: Winter/Spring/Summer/Fall
+#   -- Weekend/Weekday:
+#   -- Off/Valley/Peak intraday
+#   -- Round up the number of estimated NOTAMs, convert to integer number of staff required per hour, to completely cover the NOTAM per hour, even if excess capacity will accumulate
 # - Dynamic Seasonal Round-Down
-#    ○ Same as above, but when calculating staff required to cover NOTAMs per hour, allow for a backlog to potentially accumulate by rounding down to the next smallest integer number of staff required.
+#    -- Same as above, but when calculating staff required to cover NOTAMs per hour, allow for a backlog to potentially accumulate by rounding down to the next smallest integer number of staff required.
 # - Dynamic Aseasonal
 # Same as above, but without seasonal variation, only weekend/weekday and intraday
 
@@ -126,8 +127,8 @@ orig_df <- orig_df %>%
          peak2 = ifelse(hour >= 13 & hour <= 21, 'peak', 'off-peak'),
          peak3 = ifelse(hour >= 13 & hour <= 21, 'peak', 
                         ifelse(hour >= 5 & hour <= 10, 'valley', 'off-peak'))
-         )
-          
+  )
+
 
 # Assume 3 min per NOTAM. For dyanmic staffing model round down, we take the estimated number of NOTAMs per hour from pred, multiply by 3 minutes, and use modulo division (integer) by 60 min to get the number of staff required at a minimum for that hour.
 # Allow periods of 0 staff in this model.
@@ -154,14 +155,14 @@ pred = left_join(pred, pred_aseason %>% select(`Intra-Day Period`, `Weekend/Day`
 pred = data.frame(pred, dynam_model_1, dynam_model_2)
 
 orig_df <- left_join(orig_df, pred %>% select(Season,
-                                          Weekend.Day,
-                                          Intra.Day.Period,
-                                          dynam_model_1,
-                                          dynam_model_2,
-                                          dynam_model_3),
-                 by = c("season" = "Season",
-                        "weekend" = "Weekend.Day",
-                        "peak3" = "Intra.Day.Period"))
+                                              Weekend.Day,
+                                              Intra.Day.Period,
+                                              dynam_model_1,
+                                              dynam_model_2,
+                                              dynam_model_3),
+                     by = c("season" = "Season",
+                            "weekend" = "Weekend.Day",
+                            "peak3" = "Intra.Day.Period"))
 
 orig_df <- data.frame(orig_df, uniform_5, uniform_2)
 
@@ -188,10 +189,10 @@ start4 = as.POSIXct('2018-10-01')
 
 
 ex_weeks = c(seq(start1, start1 + 6 * 24 * 60 * 60, by = 24 * 60 * 60),
-            seq(start2, start2 + 6 * 24 * 60 * 60, by = 24 * 60 * 60),
-            seq(start3, start3 + 6 * 24 * 60 * 60, by = 24 * 60 * 60), 
-            seq(start4, start4 + 6 * 24 * 60 * 60, by = 24 * 60 * 60)
-            )
+             seq(start2, start2 + 6 * 24 * 60 * 60, by = 24 * 60 * 60),
+             seq(start3, start3 + 6 * 24 * 60 * 60, by = 24 * 60 * 60), 
+             seq(start4, start4 + 6 * 24 * 60 * 60, by = 24 * 60 * 60)
+)
 
 gp1 <- ggplot(orig_df %>% filter(format(hourly_bin_start, '%Y-%m-%d') %in% as.character(ex_weeks)), aes(x = hourly_bin_start)) + 
   geom_line(aes(y = dynam_model_1), size = 1.2, col = 'darkred', alpha = 0.4) + 
@@ -211,7 +212,7 @@ ggsave(filename = 'NOTAM_Staffing_Models_all3.png', width = 8, height = 6)
 gp2 <- ggplot(orig_df %>% filter(format(hourly_bin_start, '%Y-%m-%d') %in% as.character(ex_weeks)), aes(x = hourly_bin_start)) + 
   geom_line(aes(y = dynam_model_1), size = 1.2, col = 'darkred', alpha = 0.4) + 
   geom_line(aes(y = dynam_model_2), size = 1.2, col = 'darkblue', alpha = 0.4) +
-#  geom_line(aes(y = dynam_model_3), size = 1.2, col = 'darkgreen', alpha = 0.4) + 
+  #  geom_line(aes(y = dynam_model_3), size = 1.2, col = 'darkgreen', alpha = 0.4) + 
   # geom_line(aes(y = uniform_2), size = 1.2, col = 'grey20') + 
   # geom_line(aes(y = uniform_5), size = 1.2, col = 'grey80') + 
   theme_bw() +
