@@ -104,7 +104,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     
   s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_processed", "staff_available"))
   # print(head(s_df_long))
-  #begin: plot cumulative curves
+  # begin: plot cumulative curves
   p <- ggplot(data = s_df_long) + xlab("minute") 
   
   pc <- p + 
@@ -181,7 +181,9 @@ for(d in index_vector){
   
   #build list of staffing models to assess
   hourly_staff_models = ("uniform_5")
-  # hourly_staff_models = c(hourly_staff_models, "dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_2")
+  
+  # TODO: Look at why the dynamic models here are not lining up with correct intra-day variation (should be peaking in later part of the day)
+  hourly_staff_models = c(hourly_staff_models, "dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_2")
   
   hourly_staff_models_df = data.frame(name = hourly_staff_models, model_type = "external (non-naive)")
   hourly_staff_models_df$staff_list[[1]] = rep(list(rep(-1, 24)), nrow(hourly_staff_models_df))
@@ -212,7 +214,7 @@ for(d in index_vector){
       {
         hourly_staff_model = as.vector(orig_df[orig_df$hourly_bin_start > distinct_days$bod[d] & orig_df$hourly_bin_start < distinct_days$eod[d], as.character(hourly_staff_models_df$name[x])])
       }
-      # print(hourly_staff_model)
+      print(hourly_staff_model)
       pc = compute_staff_reqd(day = day, processing_time_in_minutes = 3, hourly_staff_model = hourly_staff_model)
       pc = pc + labs(title = paste(day, ", staff_model: " ,hourly_staff_models_df$name[x], ", busy period percentile: ", distinct_days$percentile[d]) )
       print(pc)
