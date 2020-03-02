@@ -39,22 +39,24 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   mp <- as.POSIXct(mp_string
     , tz = "UTC")
 
+  bod <- as.POSIXct(day, tz = "utc")
+  eod <- bod + 60*60*24
+  
   bop <- mp - round(0.5*study_length_in_minutes*60)
   eop <- mp + round(0.5*study_length_in_minutes*60)
     
     
   #begin: staffing paramaters. These are now arguments in the function
   average_NOTAM_processing_time_in_minutes <- processing_time_in_minutes # Defaults to 3 min, per Bruce W, each processor can process 480 NOTAMs per day
-  # day = as.Date("2019-08-07", tz = "UTC") #testing
   #end: staffing parameters
   
   day_as_datetime <- as.POSIXct.Date(day, origin = "1970-01-01", tz = "UTC")
   minutes_per_day = 24L*60L
   minute <- c(seq(1:minutes_per_day))
   arrivals <- msgs_processed <- staff_required <- vector(length = minutes_per_day)
-  arrivals_on_day <- UniqueInteractions[UniqueInteractions$date == day,]
+  arrivals_on_day <- UniqueInteractions[UniqueInteractions$datetimes >= bod & UniqueInteractions$datetimes < eod,]
   # ordered_arrivals <- arrivals_on_day[order(arrivals_on_day$datetimes),]
-  
+  print(paste("Total NOTAMS in Period: ",count(arrivals_on_day) ))
   minute <- day_as_datetime + (minute-1)*60
   capacity_in_NOTAMs_per_minute_per_staff <- 1 / average_NOTAM_processing_time_in_minutes 
   minutes_per_hour = 60L
@@ -80,8 +82,10 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     s_df$msgs_in_queue[n] = s_df$cml_arrivals[n] - s_df$cml_msgs_processed[n] 
   }
   
-  s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
-  s_df$staff_doing_non_NOTAM_tasks = max(0, s_df$staff_available - s_df$staff_required)
+  # s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
+  # s_df$staff_doing_non_NOTAM_tasks = max(0, s_df$staff_available - s_df$staff_required)
+  s_df$cml_staff_minutes_processing_NOTAMS = s_df$cml_msgs_processed * average_NOTAM_processing_time_in_minutes
+  total_staff_minutes = sum(s_df$staff_available)
 
   # begin: build up time-in-system distribution
   message_count = data.frame(message_count = seq(1:max(s_df$cml_arrivals)))
@@ -98,7 +102,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   # print(s_df_new[850:870, ]) #testing
   average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute)
   max_minutes_in_system = max(s_df_new$time_in_system) / seconds_per_minute
-  staff_minutes_doing_non_NOTAM_tasks = sum(s_df$staff_doing_non_NOTAM_tasks)
+  staff_minutes_doing_non_NOTAM_tasks = total_staff_minutes - max(s_df$cml_staff_minutes_processing_NOTAMS)
 
   # end: build up time-in-system distribution
     
@@ -116,94 +120,105 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     theme(legend.position = "top") +
     ylab("Cumulative NOTAMs (100s) / Staffing Level") +
     labs(
-      subtitle = (paste("Average minutes in system: ", average_minutes_in_system + average_NOTAM_processing_time_in_minutes, "; Max minutes in system: ", max_minutes_in_system + average_NOTAM_processing_time_in_minutes, "; Staff minutes doing non-NOTAM tasks: ", staff_minutes_doing_non_NOTAM_tasks)))
+      subtitle = (
+        paste("Average minutes in system: ", average_minutes_in_system + average_NOTAM_processing_time_in_minutes, 
+              "; Max minutes in system: ", max_minutes_in_system + average_NOTAM_processing_time_in_minutes, 
+              "; Staff hours doing non-NOTAM tasks: ", round(staff_minutes_doing_non_NOTAM_tasks / 60, 1), 
+              "; Staff total hours: ", round(total_staff_minutes / 60, 1)
+        )
+      )
+    )
   return(pc)
   # end: plot cumulative curves
   }
 
-top_block_list_size = nrow(busy_periods)
-
-# Augment busy periods frame----
-for (i in 1:top_block_list_size){ 
-  busy_periods$cumulative_count[i] = sum(busy_periods$block_count <= busy_periods$block_count[i])
-}
-
-# Create beginning-of-day and end-of-day values for this day
-busy_periods$bod <- as.POSIXct( paste(
-  as.POSIXlt.POSIXct(busy_periods$hourly_bin_start)$year + 1900
-  , as.POSIXlt.POSIXct(busy_periods$hourly_bin_start)$mon + 1
-  , as.POSIXlt.POSIXct(busy_periods$hourly_bin_start)$mday
-  , sep = "-"), tz = "UTC")
-busy_periods$eod <- busy_periods$bod + 60*60*24
-busy_periods$percentile = busy_periods$cumulative_count / top_block_list_size
-
-p <- ggplot(data = busy_periods)
-print(p 
-      + geom_point(aes(x = block_count, y = cumulative_count/top_block_list_size)) 
-      + geom_line(aes(x = block_count, y = cumulative_count/top_block_list_size)) 
-      + xlab("NOTAMs per x-hour block") 
-      + ylab("Share of busiest blocks having equal or fewer NOTAMs")
-      + labs(title = "Busiest x-hour blocks as a Cumulative Distribution Function")
-)
-ggsave("NOTAM_busy_periods_CDF.png", width = 10, height = 5)
+# Run busy day analysis ----
 
 # save to PDF
 pdf('NOTAM_Cumulative_Curves.pdf', width = 10, height = 8)
 
-# Run busy day analysis ----
 distinct_days = distinct(busy_periods, bod, .keep_all = TRUE)
 
-number_of_busy_days_to_analyze <- nrow(distinct_days)
+number_of_days_to_analyze <- nrow(distinct_days)
 use_cumulative_curves_to_estimate_delay <- TRUE
 start_with_slowest_block <- FALSE
 
 if(start_with_slowest_block){
-  index_vector = nrow(distinct_days):(nrow(distinct_days)-number_of_busy_days_to_analyze+1)
+  index_vector = nrow(distinct_days):(nrow(distinct_days)-number_of_days_to_analyze+1)
 } else
 {
-  index_vector = 1:number_of_busy_days_to_analyze
+  index_vector = 1:number_of_days_to_analyze
 }
 
 for(d in index_vector){
 
   day = as.Date(distinct_days$bod[d])
   print(day)
-  # gp <- ggplot(data = orig_df[orig_df$hourly_bin_start > bod & orig_df$hourly_bin_start < eod, ],
-  #              aes(x = hourly_bin_start,
-  #                  y = block_count)) +
-  #   geom_point() +
-  #   geom_text(aes(label = block_count), nudge_y = 8) +
-  #   geom_line() +
-  #   ggtitle(paste(bod, ' Rank:', busy_periods$block_rank_descending[k])) +
-  #   theme_bw()
-  # 
-  # print(gp)
+  
+  bod <- distinct_days$bod[d]
+  eod <- distinct_days$eod[d]  
+  gp <- ggplot(data = orig_df[orig_df$hourly_bin_start >= bod & orig_df$hourly_bin_start < eod, ],
+               aes(x = hourly_bin_start,
+                   y = hourly_count)) +
+    geom_point() +
+    geom_text(aes(label = hourly_count), nudge_y = 8) +
+    geom_line() +
+    ggtitle(paste(bod, ', Busy Period Percentile:', 100*round(distinct_days$percentile[d],3) )) +
+    theme_bw()
+
+  print(gp)
   
   #build list of staffing models to assess
   hourly_staff_models = ("uniform_5")
   
   # TODO: Look at why the dynamic models here are not lining up with correct intra-day variation (should be peaking in later part of the day)
-  hourly_staff_models = c(hourly_staff_models, "dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_2")
+  # hourly_staff_models = c(hourly_staff_models, "dynam_model_1", "dynam_model_2", "dynam_model_3", "uniform_2")
   
-  hourly_staff_models_df = data.frame(name = hourly_staff_models, model_type = "external (non-naive)")
-  hourly_staff_models_df$staff_list[[1]] = rep(list(rep(-1, 24)), nrow(hourly_staff_models_df))
+  external_hourly_staff_models_df = data.frame(name = hourly_staff_models, model_type = "external (non-naive)")
+  external_hourly_staff_models_df$staff_list[[1]] = rep(list(rep(-1, 24)), length(hourly_staff_models))
   
   #build up some local, naive models; we use data frames but would guess this is suited better to tibbles
-  high = 20
-  medium = 12
-  low = 2
-  worst_hour_hourly_staff_model = c(rep(medium, 4), rep(low, 8), rep(high, 8), rep(medium, 4))
+  other_staff_model_names = "naive_fiftieth_percentile_day"
+  other_staff_model_names = c(other_staff_model_names, "naive_seventy-fifth_percentile_day")  
+  other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_day")
+  # other_staff_model_names = c(other_staff_model_names, "naive_worst_hour")
+  # other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_hour")
+
+  
+  high = 4
+  medium = 4
+  low = 4
+  fiftieth_percentile_day_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
+  
+  high = 6
+  medium = 4
+  low = 3
+  seventy_fifth_percentile_day_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
+  
+  high = 9
+  medium = 3
+  low = 3
+  ninetieth_percentile_day_hourly_staff_model = c(rep(medium, 5), rep(low, 8), rep(high, 8), rep(medium, 3))
   
   high = 6
   medium = 4
   low = 2
   ninetieth_percentile_hour_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
   
-  other_hourly_staff_models = data.frame(name = c("naive_worst_hour", "naive_ninetieth_percentile"), model_type = "local naive", staff_list = NA)
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_worst_hour"][[1]] = list(worst_hour_hourly_staff_model)
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile"][[1]] = list(ninetieth_percentile_hour_hourly_staff_model)
+  high = 20
+  medium = 12
+  low = 2
+  worst_hour_hourly_staff_model = c(rep(medium, 4), rep(low, 8), rep(high, 8), rep(medium, 4))
   
-  hourly_staff_models_df = rbind(other_hourly_staff_models, hourly_staff_models_df)
+  other_hourly_staff_models = data.frame(name = other_staff_model_names, model_type = "local naive", staff_list = NA)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_worst_hour"][[1]] = list(worst_hour_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile_hour"][[1]] = list(ninetieth_percentile_hour_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile_day"][[1]] = list(ninetieth_percentile_day_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_seventy-fifth_percentile_day"][[1]] = list(seventy_fifth_percentile_day_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_fiftieth_percentile_day"][[1]] = list(fiftieth_percentile_day_hourly_staff_model)
+  
+  hourly_staff_models_df = other_hourly_staff_models
+  # hourly_staff_models_df = rbind(external_hourly_staff_models_df, hourly_staff_models_df)
   
   if(use_cumulative_curves_to_estimate_delay){
     for(x in 1:nrow(hourly_staff_models_df)){
@@ -212,17 +227,14 @@ for(d in index_vector){
         hourly_staff_model = as.vector(hourly_staff_models_df$staff_list[x][[1]][[1]])
       } else
       {
-        hourly_staff_model = as.vector(orig_df[orig_df$hourly_bin_start > distinct_days$bod[d] & orig_df$hourly_bin_start < distinct_days$eod[d], as.character(hourly_staff_models_df$name[x])])
+        hourly_staff_model = as.vector(orig_df[orig_df$hourly_bin_start >= bod & orig_df$hourly_bin_start < eod, as.character(hourly_staff_models_df$name[x])])
       }
       print(hourly_staff_model)
       pc = compute_staff_reqd(day = day, processing_time_in_minutes = 3, hourly_staff_model = hourly_staff_model)
-      pc = pc + labs(title = paste(day, ", staff_model: " ,hourly_staff_models_df$name[x], ", busy period percentile: ", distinct_days$percentile[d]) )
+      pc = pc + labs(title = paste(day, ", staff_model: " ,hourly_staff_models_df$name[x], ", busy period percentile: ", 100*round(distinct_days$percentile[d],3) ) )
       print(pc)
     }
   }
-  
-  # #try to speed things up by not re-examining this day
-  # busy_periods = busy_periods[busy_periods$hourly_bin_end < bod || busy_periods$hourly_bin_start > eod,]
 }
 
 dev.off(); system('open NOTAM_Cumulative_Curves.pdf')
