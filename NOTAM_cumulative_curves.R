@@ -97,7 +97,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     left_join(s_df_msgs_processed, by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
     fill(minute.arrivals, minute.msgs_processed, .direction = "up")
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
-  # print(s_df_new[which.max(s_df_new$time_in_system),]) # testing
+  print(s_df_new[which.max(s_df_new$time_in_system),])
   # print(s_df_new[is.na(s_df_new$time_in_system),])  
   # print(s_df_new[850:870, ]) #testing
   average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute)
@@ -132,22 +132,32 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   # end: plot cumulative curves
   }
 
-# Run busy day analysis ----
+# Configure busy day analysis ----
+demand_days_of_interest = as.Date("2018-12-06")
+# demand_days_of_interest = as.Date(c("2019-02-20", "2019-01-31", "2019-01-17", "2018-12-06")) #, "2018-12-09")) # year 2
+# demand_days_of_interest = as.Date(c("2017-12-13", "2018-03-08", "2018-07-25", "2018-07-27")) # year 1
+use_cumulative_curves_to_estimate_delay <- TRUE
+start_with_slowest_block <- FALSE
+create_surged_staff_models <- TRUE
 
 # save to PDF
 pdf('NOTAM_Cumulative_Curves.pdf', width = 10, height = 8)
 
+# Run busy day analysis ----
 distinct_days = distinct(busy_periods, bod, .keep_all = TRUE)
+if(exists("demand_days_of_interest")){
+  if(length(demand_days_of_interest > 0)){
+    distinct_days = distinct_days[as.Date(distinct_days$bod) %in% demand_days_of_interest,]
+  }
+}
 
-number_of_days_to_analyze <- nrow(distinct_days)
-use_cumulative_curves_to_estimate_delay <- TRUE
-start_with_slowest_block <- FALSE
+number_of_busy_days_to_analyze <- nrow(distinct_days)
 
 if(start_with_slowest_block){
-  index_vector = nrow(distinct_days):(nrow(distinct_days)-number_of_days_to_analyze+1)
+  index_vector = nrow(distinct_days):(nrow(distinct_days)-number_of_busy_days_to_analyze+1)
 } else
 {
-  index_vector = 1:number_of_days_to_analyze
+  index_vector = 1:number_of_busy_days_to_analyze
 }
 
 for(d in index_vector){
@@ -179,16 +189,33 @@ for(d in index_vector){
   
   #build up some local, naive models; we use data frames but would guess this is suited better to tibbles
   other_staff_model_names = "naive_fiftieth_percentile_day"
-  other_staff_model_names = c(other_staff_model_names, "naive_seventy-fifth_percentile_day")  
-  other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_day")
+  # other_staff_model_names = c(other_staff_model_names, "naive_seventy-fifth_percentile_day")  
+  # other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_day")
+  # other_staff_model_names = c(other_staff_model_names, "naive_hundreth_percentile_day")
   # other_staff_model_names = c(other_staff_model_names, "naive_worst_hour")
   # other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_hour")
-
   
+  other_hourly_staff_models = data.frame(name = other_staff_model_names, model_type = "local naive", staff_list = NA, stringsAsFactors = FALSE)
+  shift_length = 8L
+  
+  #populate the base model
+  base_model_name = "naive_fiftieth_percentile_day"
   high = 4
   medium = 4
   low = 4
-  fiftieth_percentile_day_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
+  shift_start_hour = 3L
+  hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
+  
+  if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
+    #copy the base model
+    hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(6, shift_length), rep(3, shift_length - shift_start_hour))
+    surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
+    frame_length = nrow(other_hourly_staff_models)
+    other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
+      c(surge_model_name, "local naive", NA)
+    other_hourly_staff_models$staff_list[other_hourly_staff_models$name == surge_model_name][[1]] = list(hourly_staff_model + hourly_surge_staff)
+  }
   
   high = 6
   medium = 4
@@ -200,22 +227,31 @@ for(d in index_vector){
   low = 3
   ninetieth_percentile_day_hourly_staff_model = c(rep(medium, 5), rep(low, 8), rep(high, 8), rep(medium, 3))
   
+  high = 14
+  medium = 10
+  low = 5
+  hundreth_percentile_day_hourly_staff_model = c(rep(medium, 4), rep(low, 8), rep(high, 8), rep(medium, 4))
+  
   high = 6
   medium = 4
   low = 2
   ninetieth_percentile_hour_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
   
+  other_hourly_staff_models = data.frame(name = c("naive_worst_hour", "naive_ninetieth_percentile"), model_type = "local naive", staff_list = NA)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_worst_hour"][[1]] = list(worst_hour_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile"][[1]] = list(ninetieth_percentile_hour_hourly_staff_model)
+
   high = 20
   medium = 12
   low = 2
   worst_hour_hourly_staff_model = c(rep(medium, 4), rep(low, 8), rep(high, 8), rep(medium, 4))
   
-  other_hourly_staff_models = data.frame(name = other_staff_model_names, model_type = "local naive", staff_list = NA)
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_worst_hour"][[1]] = list(worst_hour_hourly_staff_model)
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile_hour"][[1]] = list(ninetieth_percentile_hour_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_hundreth_percentile_day"][[1]] = list(hundreth_percentile_day_hourly_staff_model)
   other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile_day"][[1]] = list(ninetieth_percentile_day_hourly_staff_model)
   other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_seventy-fifth_percentile_day"][[1]] = list(seventy_fifth_percentile_day_hourly_staff_model)
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_fiftieth_percentile_day"][[1]] = list(fiftieth_percentile_day_hourly_staff_model)
+  
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_worst_hour"][[1]] = list(worst_hour_hourly_staff_model)
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == "naive_ninetieth_percentile_hour"][[1]] = list(ninetieth_percentile_hour_hourly_staff_model)
   
   hourly_staff_models_df = other_hourly_staff_models
   # hourly_staff_models_df = rbind(external_hourly_staff_models_df, hourly_staff_models_df)
