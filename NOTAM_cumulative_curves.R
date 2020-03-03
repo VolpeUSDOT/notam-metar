@@ -53,7 +53,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   day_as_datetime <- as.POSIXct.Date(day, origin = "1970-01-01", tz = "UTC")
   minutes_per_day = 24L*60L
   minute <- c(seq(1:minutes_per_day))
-  arrivals <- msgs_processed <- staff_required <- vector(length = minutes_per_day)
+  arrivals <- msgs_departed_from_queue <- staff_required <- vector(length = minutes_per_day)
   arrivals_on_day <- UniqueInteractions[UniqueInteractions$datetimes >= bod & UniqueInteractions$datetimes < eod,]
   # ordered_arrivals <- arrivals_on_day[order(arrivals_on_day$datetimes),]
   print(paste("Total NOTAMS in Period: ",count(arrivals_on_day) ))
@@ -63,7 +63,7 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   seconds_per_minute = 60L
   minute_by_minute_staff_model = rep(hourly_staff_model, each = minutes_per_hour)
   
-  s_df <- data.frame(minute, msgs_in_queue = NaN, arrivals, msgs_processed, staff_required = NaN, staff_available = minute_by_minute_staff_model, capacity = -1)
+  s_df <- data.frame(minute, msgs_in_queue = NaN, arrivals, msgs_departed_from_queue, staff_required = NaN, staff_available = minute_by_minute_staff_model, capacity = -1)
   
   s_df$capacity = s_df$staff_available * capacity_in_NOTAMs_per_minute_per_staff
   
@@ -72,41 +72,44 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     s_df$cml_arrivals[n] = sum(arrivals_on_day$datetimes <= s_df$minute[n])
     if (n==1){
       s_df$msgs_in_queue[n] = max(0, s_df$arrivals[n] - s_df$capacity[n])
-      s_df$msgs_processed[n] = s_df$cml_msgs_processed[n] = min(s_df$arrivals[n], s_df$capacity[n])
+      s_df$msgs_departed_from_queue[n] = s_df$cml_msgs_departed_from_queue[n] = min(s_df$arrivals[n], s_df$capacity[n])
     }
   }
   
   for(n in 2:minutes_per_day){
-    s_df$msgs_processed[n] = min(s_df$capacity[n], s_df$arrivals[n] + s_df$msgs_in_queue[n-1])
-    s_df$cml_msgs_processed[n] = s_df$cml_msgs_processed[n-1] + s_df$msgs_processed[n]  
-    s_df$msgs_in_queue[n] = s_df$cml_arrivals[n] - s_df$cml_msgs_processed[n] 
+    s_df$msgs_departed_from_queue[n] = min(s_df$capacity[n], s_df$arrivals[n] + s_df$msgs_in_queue[n-1])
+    s_df$cml_msgs_departed_from_queue[n] = s_df$cml_msgs_departed_from_queue[n-1] + s_df$msgs_departed_from_queue[n]  
+    s_df$msgs_in_queue[n] = s_df$cml_arrivals[n] - s_df$cml_msgs_departed_from_queue[n] 
   }
   
   # s_df$staff_required = ceiling(s_df$arrivals / average_NOTAM_processing_time_in_minutes)
   # s_df$staff_doing_non_NOTAM_tasks = max(0, s_df$staff_available - s_df$staff_required)
-  s_df$cml_staff_minutes_processing_NOTAMS = s_df$cml_msgs_processed * average_NOTAM_processing_time_in_minutes
+  s_df$cml_staff_minutes_processing_NOTAMS = s_df$cml_msgs_departed_from_queue * average_NOTAM_processing_time_in_minutes
   total_staff_minutes = sum(s_df$staff_available)
 
   # begin: build up time-in-system distribution
   message_count = data.frame(message_count = seq(1:max(s_df$cml_arrivals)))
   # print(s_df[900:1080,]) #testing purposes
   s_df_arrivals = s_df %>% select(cml_arrivals, minute) %>% group_by(cml_arrivals) %>% mutate(earliest = rank(minute) == 1) %>% filter(earliest == TRUE)
-  s_df_msgs_processed = s_df %>% mutate(cml_msgs_processed = ceiling(cml_msgs_processed)) %>% select(cml_msgs_processed, minute) %>% group_by(cml_msgs_processed) %>% mutate(earliest = rank(minute) == 1) %>% filter(earliest == TRUE)
+  s_df_msgs_departed_from_queue = s_df %>% mutate(cml_msgs_departed_from_queue = ceiling(cml_msgs_departed_from_queue)) %>% select(cml_msgs_departed_from_queue, minute) %>% group_by(cml_msgs_departed_from_queue) %>% mutate(earliest = rank(minute) == 1) %>% filter(earliest == TRUE)
   s_df_new = message_count %>% 
     left_join(s_df_arrivals, by = c("message_count" = "cml_arrivals")) %>% 
-    left_join(s_df_msgs_processed, by = c("message_count" = "cml_msgs_processed"), suffix = c(".arrivals", ".msgs_processed")) %>%
-    fill(minute.arrivals, minute.msgs_processed, .direction = "up")
+    left_join(s_df_msgs_departed_from_queue, by = c("message_count" = "cml_msgs_departed_from_queue"), suffix = c(".arrivals", ".msgs_departed_from_queue")) %>%
+    fill(minute.arrivals, minute.msgs_departed_from_queue, .direction = "up")
+  s_df_new$minute.msgs_processed = s_df_new$minute.msgs_departed_from_queue + average_NOTAM_processing_time_in_minutes*seconds_per_minute
+  s_df_new$delay = s_df_new$minute.msgs_departed_from_queue - s_df_new$minute.arrivals
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
   print(s_df_new[which.max(s_df_new$time_in_system),])
-  # print(s_df_new[is.na(s_df_new$time_in_system),])  
-  # print(s_df_new[850:870, ]) #testing
-  average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count) / seconds_per_minute)
-  max_minutes_in_system = max(s_df_new$time_in_system) / seconds_per_minute
+  print(s_df_new[is.na(s_df_new$time_in_system),])
+  print(s_df_new[0:150, ]) #testing
+  average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count))
+  average_minutes_delay = round(sum(s_df_new$delay/seconds_per_minute) / max(s_df_new$message_count)) 
+  max_minutes_in_system = max(s_df_new$time_in_system)
+  max_minutes_delay = max(s_df_new$delay/seconds_per_minute)
   staff_minutes_doing_non_NOTAM_tasks = total_staff_minutes - max(s_df$cml_staff_minutes_processing_NOTAMS)
-
   # end: build up time-in-system distribution
     
-  s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_processed", "staff_available"))
+  s_df_long = melt(s_df, id = "minute", measure = c("cml_arrivals", "cml_msgs_departed_from_queue", "staff_available"))
   # print(head(s_df_long))
   # begin: plot cumulative curves
   p <- ggplot(data = s_df_long) + xlab("minute") 
@@ -115,14 +118,17 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
     geom_step(data = s_df_long %>% filter(variable != "staff_available") , aes(minute, value / 100, colour = variable, linetype = variable)) +
     geom_line(data = s_df_long %>% filter(variable == "staff_available") , aes(minute, value      , colour = variable)) +
     guides(colour = "legend", linetype = FALSE) +
-    scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Processed", "Staffing Level")) +
+    scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Departing Queue", "Staffing Level")) +
     scale_linetype_discrete() +
     theme(legend.position = "top") +
     ylab("Cumulative NOTAMs (100s) / Staffing Level") +
     labs(
       subtitle = (
-        paste("Average minutes in system: ", average_minutes_in_system + average_NOTAM_processing_time_in_minutes, 
-              "; Max minutes in system: ", max_minutes_in_system + average_NOTAM_processing_time_in_minutes, 
+        paste(              
+              "Avg. delay-minutes: ", average_minutes_delay,               
+              "; Max delay-minutes: ", max_minutes_delay, 
+              # "; Avg. minutes in system: ", average_minutes_in_system, 
+              # "; Max minutes in system: ", max_minutes_in_system, 
               "; Staff hours doing non-NOTAM tasks: ", round(staff_minutes_doing_non_NOTAM_tasks / 60, 1), 
               "; Staff total hours: ", round(total_staff_minutes / 60, 1)
         )
@@ -211,9 +217,9 @@ for(d in index_vector){
   
   if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
     #copy the base model
-    # hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
+    hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
     # calibrated for year 2 diagonal: 
-    hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(6, shift_length), rep(3, shift_length - shift_start_hour))
+    # hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(6, shift_length), rep(3, shift_length - shift_start_hour))
     surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
     frame_length = nrow(other_hourly_staff_models)
     other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
