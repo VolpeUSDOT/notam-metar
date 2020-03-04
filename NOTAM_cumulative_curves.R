@@ -100,8 +100,8 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   s_df_new$delay = s_df_new$minute.msgs_departed_from_queue - s_df_new$minute.arrivals
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
   print(s_df_new[which.max(s_df_new$time_in_system),])
-  print(s_df_new[is.na(s_df_new$time_in_system),])
-  print(s_df_new[0:150, ]) #testing
+  # print(s_df_new[is.na(s_df_new$time_in_system),]) # verification
+  # print(s_df_new[c(496, 523, 1615), ]) # testing
   average_minutes_in_system = round(sum(s_df_new$time_in_system) / max(s_df_new$message_count))
   average_minutes_delay = round(sum(s_df_new$delay/seconds_per_minute) / max(s_df_new$message_count)) 
   max_minutes_in_system = max(s_df_new$time_in_system)
@@ -139,9 +139,9 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   }
 
 # Configure busy day analysis ----
-demand_days_of_interest = as.Date("2018-12-06")
+# demand_days_of_interest = as.Date("2017-12-13")
 # demand_days_of_interest = as.Date(c("2019-02-20", "2019-01-31", "2019-01-17", "2018-12-06")) #, "2018-12-09")) # year 2
-# demand_days_of_interest = as.Date(c("2017-12-13", "2018-03-08", "2018-07-25", "2018-07-27")) # year 1
+demand_days_of_interest = as.Date(c("2017-12-13", "2018-03-08", "2018-07-25", "2018-07-27")) # year 1
 use_cumulative_curves_to_estimate_delay <- TRUE
 start_with_slowest_block <- FALSE
 create_surged_staff_models <- TRUE
@@ -195,9 +195,9 @@ for(d in index_vector){
   
   #list the local naive models you would like to run
   other_staff_model_names = "naive_fiftieth_percentile_day"
-  # other_staff_model_names = c(other_staff_model_names, "naive_seventy-fifth_percentile_day")  
-  # other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_day")
-  # other_staff_model_names = c(other_staff_model_names, "naive_hundreth_percentile_day")
+  other_staff_model_names = c(other_staff_model_names, "naive_seventy-fifth_percentile_day")
+  other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_day")
+  other_staff_model_names = c(other_staff_model_names, "naive_hundreth_percentile_day")
   # other_staff_model_names = c(other_staff_model_names, "naive_worst_hour")
   # other_staff_model_names = c(other_staff_model_names, "naive_ninetieth_percentile_hour")
   
@@ -211,15 +211,13 @@ for(d in index_vector){
   high = 4
   medium = 4
   low = 4
-  shift_start_hour = 3L
-  hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
+  shift_start_hour = 1L
+  hourly_staff_model = c(rep(high, shift_start_hour), rep(low, shift_length), rep(medium, shift_length), rep(high, shift_length - shift_start_hour))
   other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
   
   if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
     #copy the base model
-    hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
-    # calibrated for year 2 diagonal: 
-    # hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(6, shift_length), rep(3, shift_length - shift_start_hour))
+    hourly_surge_staff = c(rep(6, shift_start_hour), rep(6, shift_length), rep(6, shift_length), rep(6, shift_length - shift_start_hour)) # calibrated to max delay of 2 minutes
     surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
     frame_length = nrow(other_hourly_staff_models)
     other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
@@ -233,12 +231,13 @@ for(d in index_vector){
   high = 6
   medium = 4
   low = 3
-  seventy_fifth_percentile_day_hourly_staff_model = c(rep(medium, 3), rep(low, 8), rep(high, 8), rep(medium, 5))
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(seventy_fifth_percentile_day_hourly_staff_model)
+  shift_start_hour = 3L  
+  hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
 
   if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
     #copy the base model
-    hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
+    hourly_surge_staff = c(rep(7, shift_start_hour), rep(3, shift_length), rep(35, shift_length), rep(7, shift_length - shift_start_hour)) #calibrated
     surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
     frame_length = nrow(other_hourly_staff_models)
     other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
@@ -252,12 +251,13 @@ for(d in index_vector){
   high = 9
   medium = 3
   low = 3
-  ninetieth_percentile_day_hourly_staff_model = c(rep(medium, 5), rep(low, 8), rep(high, 8), rep(medium, 3))
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(ninetieth_percentile_day_hourly_staff_model)
-
+  shift_start_hour = 5L  
+  hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
+  
   if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
     #copy the base model
-    hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
+    hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(4, shift_length), rep(3, shift_length - shift_start_hour)) #calibrated to max delay of two minutes on the design day
     surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
     frame_length = nrow(other_hourly_staff_models)
     other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
@@ -271,12 +271,13 @@ for(d in index_vector){
   high = 14
   medium = 10
   low = 5
-  hundreth_percentile_day_hourly_staff_model = c(rep(medium, 4), rep(low, 8), rep(high, 8), rep(medium, 4))
-  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hundreth_percentile_day_hourly_staff_model)
+  shift_start_hour = 4L  
+  hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
+  other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
   
   if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
     #copy the base model
-    hourly_surge_staff = c(rep(0, shift_start_hour), rep(0, shift_length), rep(0, shift_length), rep(0, shift_length - shift_start_hour))
+    hourly_surge_staff = c(rep(5, shift_start_hour), rep(5, shift_length), rep(7, shift_length), rep(5, shift_length - shift_start_hour)) #calibrated to max delay of two minutes on the design day
     surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
     frame_length = nrow(other_hourly_staff_models)
     other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
