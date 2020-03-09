@@ -3,13 +3,13 @@
 
 working_dir <- ifelse(grepl('lylet', path.expand('~/')),
                       'C:/Users/lylet/OneDrive/Documents/NOTAM/input_output',
-                      '~/OneDrive/Documents/NOTAM/input_output')
+                      'H:/Consult/NOTAM + METAR/NOTAM_Freq')
 
 setwd(working_dir)
 
 if(!file.exists("NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
-  source('C:/Users/lylet/Documents/GitHub/notam-metar/NOTAM_Freq/NOTAM_analysis_busy_periods.R')
+  source('NOTAM_Freq/NOTAM_analysis_busy_periods.R')
 }
 
 load("NOTAM_Freq_w_busy_days.RData")
@@ -325,4 +325,13 @@ for(d in index_vector){
 dev.off(); system('open NOTAM_Cumulative_Curves.pdf')
 
 
+### Additional plots and tables for report ----
 
+# Table showing staffing models
+# Take hourly_staff_models_df and represent staff_list in columns.
+
+staff_df <- as.data.frame(hourly_staff_models_df$staff_list)
+
+names(staff_df) = hourly_staff_models_df$name
+
+write.csv(staff_df, file = 'NOTAM_Staff_Models_by_hour.csv')

@@ -9,7 +9,7 @@
 
 working_dir <- ifelse(grepl('lylet', path.expand('~/')),
                       'C:/Users/lylet/OneDrive/Documents/NOTAM/input_output',
-                      '~/OneDrive/Documents/NOTAM/input_output')
+                      'H:/Consult/NOTAM + METAR/NOTAM_Freq')
 
 setwd(working_dir)
 
