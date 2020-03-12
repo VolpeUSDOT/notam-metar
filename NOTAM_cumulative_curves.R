@@ -51,6 +51,9 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   #end: staffing parameters
   
   day_as_datetime <- as.POSIXct.Date(day, origin = "1970-01-01", tz = "UTC")
+  # Enforce UTC time zone. 
+  day_as_datetime = lubridate::with_tz(day_as_datetime, tzone = "UTC")
+  
   minutes_per_day = 24L*60L
   minute <- c(seq(1:minutes_per_day))
   arrivals <- msgs_departed_from_queue <- staff_required <- vector(length = minutes_per_day)
@@ -58,6 +61,10 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   # ordered_arrivals <- arrivals_on_day[order(arrivals_on_day$datetimes),]
   print(paste("Total NOTAMS in Period: ",count(arrivals_on_day) ))
   minute <- day_as_datetime + (minute-1)*60
+  
+  # Convert minute to UTC for consistency
+  minute <- as.POSIXct(minute, origin = "1970-01-01", tz = "UTC")
+  
   capacity_in_NOTAMs_per_minute_per_staff <- 1 / average_NOTAM_processing_time_in_minutes 
   minutes_per_hour = 60L
   seconds_per_minute = 60L
@@ -138,14 +145,15 @@ compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff
   # end: plot cumulative curves
   }
 
-# Alternative plotting function, with two panels 
+# Alternative plotting function, with three panels, and optional 'focus' plot to zoom in on one hour 
 compute_staff_reqd_2 <- function(day, 
                                  model_name,
                                  processing_time_in_minutes = 3, 
                                  hourly_staff_model, 
                                  study_period_midpoint_utc = as.POSIXct("2019-12-14 23:40:12", tz = "UTC"), study_length_in_minutes = 7*24*60,
                                  focus_inset = TRUE,
-                                 focus_start = "11:00:00") {
+                                 focus_start = "11:00:00",
+                                 focus_range = c(550, 650)) {
   # For testing: processing_time_in_minutes = 3; study_period_midpoint_utc = as.POSIXct("2019-12-14 23:40:12", tz = "UTC"); study_length_in_minutes = 7*24*60; focus_inset = TRUE;  focus_start = "11:00:00"
   
   # rounding to a whole minute
@@ -171,6 +179,9 @@ compute_staff_reqd_2 <- function(day,
   # end: staffing parameters
   
   day_as_datetime <- as.POSIXct.Date(day, origin = "1970-01-01", tz = "UTC")
+  # Enforce UTC time zone
+  day_as_datetime = lubridate::with_tz(day_as_datetime, tzone = "UTC")
+  
   minutes_per_day = 24L*60L
   minute <- c(seq(1:minutes_per_day))
   arrivals <- msgs_departed_from_queue <- staff_required <- vector(length = minutes_per_day)
@@ -306,7 +317,7 @@ compute_staff_reqd_2 <- function(day,
     
     focus_pc <- pc +
       xlim(unclass(start_min)$minute, unclass(end_min)$minute) +
-      ylim(500, 650)
+      ylim(focus_range[1], focus_range[2])
     
     ggsave(filename = paste0('Focus_', model_name, '_', day, '.jpeg'),
            plot = focus_pc,
@@ -394,6 +405,7 @@ for(d in index_vector){
   medium = 4
   low = 4
   shift_start_hour = 1L
+  
   hourly_staff_model = c(rep(high, shift_start_hour), rep(low, shift_length), rep(medium, shift_length), rep(high, shift_length - shift_start_hour))
   other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
   
@@ -545,18 +557,19 @@ df %>%
             ave = mean(count),
             max = max(count))
 
-## Re-do 75th percentile day figures ---- 
+## Re-do 75th and 90th percentile day figures ---- 
 # with some better formatting
-d = 3 # 3rd of distinct_days is the 75th percentile day
+# d = 3 # 3rd of distinct_days is the 75th percentile day
+ d = 2 # for 90th
 
 day = as.Date(distinct_days$bod[d])
 
 bod <- distinct_days$bod[d]
 eod <- distinct_days$eod[d]  
   
-# For these figures, only need rows 2 and 6 from hourly_staff_models_df  
+# For these figures, only need rows 2 and 6 from hourly_staff_models_df for 75th; 3 and 7 for 90th
 
-  for(x in c(2, 6)){#1:nrow(hourly_staff_models_df)){
+  for(x in c(3, 7)){ #  c(2, 6)){ #
     # x = 2
     
     print(model_name <- as.character(hourly_staff_models_df$name[x]))
@@ -574,7 +587,8 @@ eod <- distinct_days$eod[d]
                          hourly_staff_model = hourly_staff_model, 
                          model_name = model_name,
                          focus_inset = TRUE,
-                         focus_start = "11:30:00"
+                         focus_start = "16:30:00", #"15:30:00",
+                         focus_range = c(600, 800) # c(500, 650) 
                          )
     
   }
