@@ -588,7 +588,7 @@ eod <- distinct_days$eod[d]
                          model_name = model_name,
                          focus_inset = TRUE,
                          focus_start = "16:30:00", #"15:30:00",
-                         focus_range = c(600, 800) # c(500, 650) 
+                         focus_range = c(700, 900) # c(500, 650) 
                          )
     
   }
