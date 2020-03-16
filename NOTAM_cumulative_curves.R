@@ -557,6 +557,8 @@ df %>%
             ave = mean(count),
             max = max(count))
 
+save(list = ls(), file = 'Processed_NOTAM_Curve_Data.RData')
+
 ## Re-do 75th and 90th percentile day figures ---- 
 # with some better formatting
 # d = 3 # 3rd of distinct_days is the 75th percentile day
@@ -587,7 +589,7 @@ eod <- distinct_days$eod[d]
                          hourly_staff_model = hourly_staff_model, 
                          model_name = model_name,
                          focus_inset = TRUE,
-                         focus_start = "16:30:00", #"15:30:00",
+                         focus_start = "16:30:00", # "15:30:00",
                          focus_range = c(700, 900) # c(500, 650) 
                          )
     
