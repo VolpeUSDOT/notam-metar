@@ -33,8 +33,8 @@ library(kableExtra)# for better tables
 
 # Working directory: This sets the path to my H: drive if being run from my computer, otherwise put in your own path
 workingdir <- ifelse(grepl('flynn', system('whoami', intern = T)),
-                     "~/Temp_Working_Docs/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
-                     #"H:/Consult/NOTAM + METAR/NOTAM_Freq",
+                     #"~/Temp_Working_Docs/NOTAM_Local/NOTAM + METAR/NOTAM_Freq/",
+                     "H:/Consult/NOTAM + METAR/NOTAM_Freq",
                      "<Put_Your_Path_Here>")
 
 setwd(workingdir)
@@ -63,6 +63,7 @@ df <- UniqueInteractions %>%
     group_by(date, month, season, weekend) %>% 
   summarize(count = n())
 
+write.csv(df, file = 'NOTAM_count_by_day.csv', row.names=F)
 
 ```
 
