@@ -76,9 +76,9 @@ if(!file.exists('FNS_NOTMAS.RData')){
 }
 ```
 
-The orgi data set contains `r nrow(d)` NOTMAS, from `r min(d$Action.Date)` to `r max(d$Action.Date)` with `r format(unique(d$Reference.ID), big.mark = ',')` unique NOTAM Reference IDs.
+The original data set contains `r format(nrow(d), big.mark = ',')` NOTMAS, from `r min(d$Action.Date)` to `r max(d$Action.Date)` with `r format(length(unique(d$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
 
-After removing NOTAMS within 10 minutes of each other (for the same Reference ID), the remaining full set of NOTAMS is `r format(unique(dt$Reference.ID), big.mark = ',')`.
+After removing NOTAMS within 10 minutes of each other (for the same Reference ID), the remaining full set of NOTAMS is `r format(nrow(dt), big.mark = ',')` total observations from `r format(length(unique(dt$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
 
 ```{r format}
 
@@ -267,7 +267,7 @@ for(x in unique(df_Region$Region)){
     guides(color = FALSE) +                                            # Suppress legend for vertical lines
     theme_bw() +
     ylab("Count of days") + xlab("Count of NOTAMs") +
-    ggtitle(paste0(x, ": Histograms of NOTAM counts by day"))
+    ggtitle(paste0(x, " Service Area: Histograms of NOTAM counts by day"))
   
   # Add annotations for each vertical line
   df_mc <- df_mc %>%
