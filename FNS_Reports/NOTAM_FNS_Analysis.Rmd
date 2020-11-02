@@ -61,7 +61,13 @@ if(!file.exists('FNS_NOTMAS.RData')){
   # Order by Reference.ID and omit any duplicates with Action.Date within 10 minutes
   d <- compiled[order(compiled$Reference.ID, compiled$Action.Date),]
   
-  # save(d, file = 'FNS_NOTMAS.RData')
+  counts_1 = c(nrow(d), length(unique(d$Reference.ID))) 
+  
+  d <- d %>%
+    filter(action != 'Initiated') %>%
+    filter(action != 'Submitted for review')
+  
+  counts_2 = c(nrow(d), length(unique(d$Reference.ID))) 
   
   dt <- d %>%
     group_by(Reference.ID) %>%
@@ -71,9 +77,22 @@ if(!file.exists('FNS_NOTMAS.RData')){
   
   View(dt %>% select(Reference.ID, Action.Date, action_time_diff))
   
+  counts_3 = c(nrow(dt), length(unique(dt$Reference.ID))) 
+
+  # kable(table(dt$action), format = 'simple') 
+  
+  
 } else {
   load('FNS_NOTMAS.RData')
 }
+
+# Omit 'Initiated' and 'Submitted for review' first, then do the 10 min grouping 
+# Count total NOTAMS rows at each step
+# Count total NOTMAS and total rows at each FPA
+# Count total NOTMAS and total rows at each Service Area
+
+# kable(rbind(counts_1, counts_2, counts_3), format = 'simple') 
+
 ```
 
 The original data set contains `r format(nrow(d), big.mark = ',')` NOTMAS, from `r min(d$Action.Date)` to `r max(d$Action.Date)` with `r format(length(unique(d$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
@@ -106,29 +125,44 @@ if(!file.exists('FNS_NOTMAS.RData')){
 }
 ```
 
+## Summarize counts
+
+Counts of NOTAMs by FPA (total rows and unique NOTAMs)
+
+```{r summary1}
+
+fpa_count <- dt %>%
+  group_by(FPA) %>%
+  summarize(`Total rows` = n(),
+            `Unique NOTAMs` = length(unique(Reference.ID)))
+
+
+kable(fpa_count, format = 'simple')
+
+```
+
+Same, but now grouped into regions
+
+```{r summary2}
+fpa_groups <- readxl::read_xlsx(file.path(getwd(), 'Data', 'FPA_Regions.xlsx'))
+
+dt_Region = left_join(dt, fpa_groups, by = 'FPA') 
+
+fpa_count <- dt_Region %>%
+  group_by(Region) %>%
+  summarize(`Total rows` = n(),
+            `Unique NOTAMs` = length(unique(Reference.ID)))
+
+kable(fpa_count, format = 'simple')
+
+```
 
 ## Plotting
 
 
 ### Count of NOTAMs by date
 
-```{r dateplot, warning=FALSE}
-
-g1 <- ggplot(df, aes(x = date, y = count)) +
-  geom_point(color = scales::alpha('midnightblue', 0.2)) +          # Make semi-transparent points
-  geom_smooth(span = 0.1) +                                         # Add a spline through these
-  theme_bw() +                                                      # Use a cleaner black and white theme
-  ylab("NOTAM counts") + xlab('Date') +
-  ggtitle("Count of NOTAMs by date over the study period")          # Add a title to the plot
-
-ggsave(plot = g1, filename = "NOTAM_Freq_timeline.jpg", width = 6, height = 5) # Save the figure to the working directory
-
-ggplotly(g1)
-
-```
-
-Same data, but now separate lines for weekend and weekday:
-
+With separate lines for weekend and weekday:
 
 ```{r dateplot2, warning=FALSE}
 # Rename the weekend variable values 
