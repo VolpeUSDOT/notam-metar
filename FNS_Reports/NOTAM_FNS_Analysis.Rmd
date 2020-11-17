@@ -19,6 +19,7 @@ Goals:
 - Produce visuals of NOTAM frequencies by date, with data downloaded from FNS Reports site
 - Filter out NOTAMS within 10 minutes of the same ID
 - Frequency distributions of counts of NOTAMs by date
+- Generate staffing models (Type 1, 90th percentile demand day), by service area 
 
 
 
@@ -39,7 +40,7 @@ workingdir <- file.path(getwd(), 'Data/NOTAMS')
 ```{r compile}
 # Loop over reports and compile
 
-if(!file.exists('FNS_NOTMAS.RData')){
+if(!file.exists('FNS_NOTAMS.RData')){
 
   files_to_read = dir(workingdir)
   
@@ -83,19 +84,19 @@ if(!file.exists('FNS_NOTMAS.RData')){
   
   
 } else {
-  load('FNS_NOTMAS.RData')
+  load('FNS_NOTAMS.RData')
 }
 
 # Omit 'Initiated' and 'Submitted for review' first, then do the 10 min grouping 
 # Count total NOTAMS rows at each step
-# Count total NOTMAS and total rows at each FPA
-# Count total NOTMAS and total rows at each Service Area
+# Count total NOTAMS and total rows at each FPA
+# Count total NOTAMS and total rows at each Service Area
 
 # kable(rbind(counts_1, counts_2, counts_3), format = 'simple') 
 
 ```
 
-The original data set contains `r format(nrow(d), big.mark = ',')` NOTMAS, from `r min(d$Action.Date)` to `r max(d$Action.Date)` with `r format(length(unique(d$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
+The original data set contains `r format(nrow(d), big.mark = ',')` NOTAMS, from `r min(d$Action.Date)` to `r max(d$Action.Date)` with `r format(length(unique(d$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
 
 After removing NOTAMS within 10 minutes of each other (for the same Reference ID), the remaining full set of NOTAMS is `r format(nrow(dt), big.mark = ',')` total observations from `r format(length(unique(dt$Reference.ID)), big.mark = ',')` unique NOTAM Reference IDs.
 
@@ -103,7 +104,7 @@ After removing NOTAMS within 10 minutes of each other (for the same Reference ID
 
 # Season: First define months from date time, then manually code months into seasons with a series of if/else statements nested together.
 
-if(!file.exists('FNS_NOTMAS.RData')){
+if(!file.exists('FNS_NOTAMS.RData')){
   df <- dt %>% 
     mutate(dow = format(Action.Date, '%A')) %>%
     mutate(date = as.Date(Action.Date)) %>%
@@ -121,7 +122,7 @@ if(!file.exists('FNS_NOTMAS.RData')){
   write.csv(df, file = 'FNS_NOTAM_count_by_day.csv', row.names=F)
   
   
-  save(list = c('d', 'dt', 'df'), file = 'FNS_NOTMAS.RData')
+  save(list = c('d', 'dt', 'df'), file = 'FNS_NOTAMS.RData')
 }
 ```
 
@@ -179,7 +180,7 @@ g1.1 <- ggplot(df, aes(x = date, y = count, color = weekend)) +
 
 ggsave(plot = g1.1, filename = "NOTAM_Freq_timeline_we.jpg", width = 6, height = 5) 
 
-ggplotly(g1.1)
+# ggplotly(g1.1)
 
 ```
 
@@ -323,3 +324,113 @@ dev.off()
 
 ```
 
+# Staffing model analysis
+
+
+```{r busy_period_param}
+# begin: busy period search parameters ----
+
+#decide how much of the available data will be used for model building (versus model testing)
+# min_hours_on_call_worker <- 4L
+ignore_overlapping_busy_periods = TRUE
+busy_periods_calendar_day_flag = TRUE
+block_size_hours <- 24L #expecting integer 0-24
+
+stopifnot(block_size_hours>=0L & block_size_hours<=24L & typeof(block_size_hours) == "integer")
+
+earliest_datetime <- min(d$Action.Date)
+print(earliest_datetime)
+
+latest_datetime <- max(d$Action.Date)
+print(latest_datetime)
+
+earliest_complete_day <- as.Date(earliest_datetime)
+
+latest_complete_day <- as.Date(latest_datetime)
+
+if(block_size_hours == 24){ #leaving out the partial days 
+  earliest_datetime <- earliest_complete_day
+  latest_datetime <- latest_complete_day
+}
+print(earliest_datetime)
+print(latest_datetime)
+
+study_start <- earliest_datetime
+
+study_length_whole_days <- as.integer(1 + difftime(latest_datetime, study_start, units = "days"))
+  
+share_of_study_for_model_building <- 1
+
+model_build_days <- as.integer(study_length_whole_days * share_of_study_for_model_building)
+
+model_build_hours <- model_build_days*24
+offset <- 0 # e.g., 0 for model build, 60*60*model_build_hours for model test
+
+top_block_list_size <- model_build_hours # 25L
+```
+
+```{r create_hr_blocks}
+# Create hour blocks from data frame dt, counting number of NOTAMS in each hour across the study period, by Service Area
+# Join fpa groups to dt to add the service area Region. Then make it smaller by only selecting the columns we need
+
+dt <- dt %>%
+  left_join(fpa_groups, by = 'FPA') %>%
+  select(FPA, Region, action, Action.Date)
+
+# Make hour blocks to group by
+dt <- dt %>%
+  mutate(yr_hour = as.POSIXct(format(Action.Date, '%Y-%m-%d %H'), format = '%Y-%m-%d %H', origin = "1970-01-01", tz = "UTC"))
+
+
+dt_hr <- dt %>%
+  group_by(Region, yr_hour) %>%
+  summarize(hourly_count = n()) %>%
+  mutate(hourly_count_rank = rank(1/hourly_count))
+  
+```
+
+```{r staffing}
+
+# Adding staffing models ----
+
+# Add to dt_hr the staffing models.
+# Staffing Models
+
+# - Dynamic Seasonal Round-Up - Use the values from the exploratory data analysis (NOTAM_Freq_Analysis.Rmd..) and get the staff needed for each time period by:
+#   --Season: Winter/Spring/Summer/Fall
+#   -- Weekend/Weekday:
+#   -- Off/Valley/Peak intraday
+#   -- Round up the number of estimated NOTAMs, convert to integer number of staff required per hour, to completely cover the NOTAM per hour, even if excess capacity will accumulate
+# - Dynamic Seasonal Round-Down
+#    -- Same as above, but when calculating staff required to cover NOTAMs per hour, allow for a backlog to potentially accumulate by rounding down to the next smallest integer number of staff required.
+# - Dynamic Aseasonal
+# Same as above, but without seasonal variation, only weekend/weekday and intraday
+
+# For the dynamic staffing models, we need to add season, weekend/weekday, and intraday periods to orig_df_hr data frame.
+orig_dt_hr <- dt_hr %>%
+  mutate(date = as.Date(yr_hour), 
+         dow = format(yr_hour, '%A'),
+         hour = format(yr_hour, '%H'),
+         weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 'Weekend', 'Weekday')),
+         month   = format(yr_hour, '%m'),
+         season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
+                                    ifelse(month == '03' | month == '04' | month == '05', 'Spring',
+                                           ifelse(month == '06' | month == '07' | month == '08', 'Summer',
+                                                  ifelse(month == '09' | month == '10' | month == '11', 'Fall', NA))))),
+         peak2 = ifelse(hour >= 13 & hour <= 21, 'peak', 'off-peak'),
+         peak3 = ifelse(hour >= 13 & hour <= 21, 'peak',
+                        ifelse(hour >= 5 & hour <= 10, 'valley', 'off-peak'))
+  ) 
+
+```
+
+```{r saveoutput}
+# Save output to working directory ----
+
+save(list = c('dt', 
+              'df',
+              'fpa_groups',
+              'orig_dt_hr'),
+     file = 'FNS_NOTAM_Freq_w_busy_days.RData')
+
+```
