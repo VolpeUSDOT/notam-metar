@@ -3,6 +3,8 @@
 
 # Adapted for FNS reports of NOTAMs, with service area added
 
+# Adding a step to optimize the staffing needed
+
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
   source('NOTAM_FNS_Analysis.Rmd')
@@ -375,6 +377,9 @@ for(Region in unique(ninetieth_days$Region)){
   
   demand_days_of_interest = as.Date(ninetieth_days[ninetieth_days$Region == Region,'date'])
   
+  count_on_demand_day = ninetieth_days[ninetieth_days$Region == Region,'daily_count']
+  
+  
   use_cumulative_curves_to_estimate_delay <- TRUE
   start_with_slowest_block <- FALSE
   create_surged_staff_models <- TRUE
@@ -396,8 +401,8 @@ for(Region in unique(ninetieth_days$Region)){
   number_of_busy_days_to_analyze <- length(distinct_days)
   
   index_vector = 1:number_of_busy_days_to_analyze
-  
-  # !!! only for Western region now, will have to add facet grouping for service area / region
+
+  # If there are multiple days, this loops over the demand days  
   for(d in index_vector){
     # d = 1
     
@@ -427,16 +432,24 @@ for(Region in unique(ninetieth_days$Region)){
     # staff model 90 ----    
     #populate the base model  
     base_model_name = "naive_ninetieth_percentile_day"
-    high = 2
-    medium = 1
-    low = 1
+    
+    # Make a guess about high and low staffing based on total NOTAM count
+    # TODO: Optimize this !!!
+    
+    high = floor(count_on_demand_day / 100); high = ifelse(high < 2, 2, high)
+    medium = floor(count_on_demand_day / 200); medium = ifelse(medium < 1, 1, medium)
+    low = floor(count_on_demand_day / 250); low = ifelse(low < 1, 1, low)
+    
+    
     shift_start_hour = 5L  
     hourly_staff_model = c(rep(medium, shift_start_hour), rep(low, shift_length), rep(high, shift_length), rep(medium, shift_length - shift_start_hour))
     other_hourly_staff_models$staff_list[other_hourly_staff_models$name == base_model_name][[1]] = list(hourly_staff_model)
     
     if(create_surged_staff_models & base_model_name %in% other_staff_model_names){ 
       # copy the base model
-      hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(4, shift_length), rep(3, shift_length - shift_start_hour)) #calibrated to max delay of two minutes on the design day
+      
+      hourly_surge_staff = c(rep(3, shift_start_hour), rep(3, shift_length), rep(4, shift_length), rep(3, shift_length - shift_start_hour)) # calibrated to max delay of two minutes on the design day
+      
       surge_model_name = paste(base_model_name, "_with_surge", sep = "")  
       frame_length = nrow(other_hourly_staff_models)
       other_hourly_staff_models[frame_length + 1, c("name", "model_type", "staff_list")] = 
