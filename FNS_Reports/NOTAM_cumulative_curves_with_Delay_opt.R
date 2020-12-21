@@ -5,6 +5,12 @@
 
 # Adding a step to optimize the staffing needed
 
+# Setup ----
+
+if(grepl(getwd(), 'notam-metar/$')){
+  setwd('./FNS_Reports')
+}
+
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
   source('NOTAM_FNS_Analysis.Rmd')
@@ -21,10 +27,12 @@ library(reshape2)
 library(tidyr)
 
 # Find percentile days ----
+
 day_sums = orig_dt_hr %>%
   ungroup() %>%
   group_by(Region, date) %>%
   summarize(daily_count = sum(hourly_count))
+
 
 # Now find the quantile days for each region
 
@@ -64,10 +72,44 @@ for(r in unique(day_sums$Region)){
 
 ninetieth_days
 
+# Same, but for across the whole NAS ----
+
+day_sum_NAS = orig_dt_hr %>%
+  ungroup() %>%
+  group_by(date) %>%
+  summarize(daily_count = sum(hourly_count))
+
+
+# Now find the quantile days 
+
+pctile_day_NAS = day_sum_NAS %>%
+  ungroup() %>%
+  summarize(quantile = seq(0, 1, 0.1),
+            daily_count = quantile(daily_count, probs = seq(0, 1, 0.1)))
+
+ninetieth = pctile_day_NAS %>% filter(quantile == 0.9)
+
+# Which days are the 90th percentile demand day?
+
+ninetieth_r = pctile_day_NAS %>% filter(quantile == 0.9)
+hundredth_r = pctile_day_NAS %>% filter(quantile == 1)  
+
+ninetieth_day_NAS = day_sum_NAS %>%
+  filter(daily_count >=  ninetieth_r$daily_count & 
+           daily_count <  hundredth_r$daily_count) %>%
+  mutate(proximity_to_ninetieth = daily_count - ninetieth_r$daily_count) %>%
+  filter(proximity_to_ninetieth == min(proximity_to_ninetieth))
+
+class(ninetieth_day_NAS) = 'data.frame'
+
+ninetieth_day_NAS
 
 # Define functions ----
 
-compute_staff_reqd <- function(day, processing_time_in_minutes = 3, hourly_staff_model, study_period_midpoint_utc = mean(dt$yr_hour), study_length_in_minutes = 7*24*60,
+compute_staff_reqd <- function(day, processing_time_in_minutes = 3, 
+                               hourly_staff_model,
+                               study_period_midpoint_utc = mean(dt$yr_hour),
+                               study_length_in_minutes = 7*24*60,
                                Region = 'Western') {
   
   # day = as.Date("2019-04-29")
