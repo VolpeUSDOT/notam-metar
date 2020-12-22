@@ -7,7 +7,7 @@
 
 # Setup ----
 
-if(grepl(getwd(), 'notam-metar/$')){
+if(grepl(getwd(), 'notam-metar$')){
   setwd('./FNS_Reports')
 }
 
@@ -72,11 +72,12 @@ for(r in unique(day_sums$Region)){
 
 ninetieth_days
 
-# Same, but for across the whole NAS ----
+# Across the whole NAS, by weekend and season ----
 
 day_sum_NAS = orig_dt_hr %>%
+  mutate(season_we = paste(season, weekend)) %>%
   ungroup() %>%
-  group_by(date) %>%
+  group_by(date, season, weekend, season_we) %>%
   summarize(daily_count = sum(hourly_count))
 
 
@@ -84,6 +85,8 @@ day_sum_NAS = orig_dt_hr %>%
 
 pctile_day_NAS = day_sum_NAS %>%
   ungroup() %>%
+  mutate(season_we = paste(season, weekend)) %>%
+  group_by(season, weekend, season_we) %>%
   summarize(quantile = seq(0, 1, 0.1),
             daily_count = quantile(daily_count, probs = seq(0, 1, 0.1)))
 
@@ -94,13 +97,26 @@ ninetieth = pctile_day_NAS %>% filter(quantile == 0.9)
 ninetieth_r = pctile_day_NAS %>% filter(quantile == 0.9)
 hundredth_r = pctile_day_NAS %>% filter(quantile == 1)  
 
-ninetieth_day_NAS = day_sum_NAS %>%
-  filter(daily_count >=  ninetieth_r$daily_count & 
-           daily_count <  hundredth_r$daily_count) %>%
-  mutate(proximity_to_ninetieth = daily_count - ninetieth_r$daily_count) %>%
-  filter(proximity_to_ninetieth == min(proximity_to_ninetieth))
+ninetieth_day_NAS  = vector()
 
-class(ninetieth_day_NAS) = 'data.frame'
+for(sw in unique(pctile_day_NAS$season_we)){
+  # sw = 'Fall Weekday'
+  ninetieth_sw = ninetieth_r %>% filter(season_we == sw)
+  hundredth_sw = hundredth_r %>% filter(season_we == sw)
+  
+  ninetieth_day_NASsw = day_sum_NAS %>%
+    filter(season_we == sw) %>%
+    filter(daily_count >=  ninetieth_sw$daily_count & 
+             daily_count <  hundredth_sw$daily_count) %>%
+    mutate(proximity_to_ninetieth = daily_count - ninetieth_sw$daily_count)
+  
+  ninetieth_day_NASsw = ninetieth_day_NASsw %>% 
+    filter(proximity_to_ninetieth == min(ninetieth_day_NASsw$proximity_to_ninetieth))
+  
+  class(ninetieth_day_NASsw) = 'data.frame'
+  
+  ninetieth_day_NAS = rbind(ninetieth_day_NAS, ninetieth_day_NASsw)
+}
 
 ninetieth_day_NAS
 
@@ -191,7 +207,7 @@ compute_staff_reqd <- function(day,
   max_minutes_in_system = max(s_df_new$time_in_system, na.rm=T)
   max_minutes_delay = as.numeric(max(s_df_new$delay/seconds_per_minute, na.rm=T))
   
-  hour_of_max_delay = s_df_new %>% filter(delay == max(delay)) %>% select(minute.arrivals) 
+  hour_of_max_delay = s_df_new %>% filter(delay == max(delay, na.rm = T)) %>% select(minute.arrivals) 
   
   hour_of_max_delay = format(hour_of_max_delay[,1][1], format = "%H")
   
@@ -320,7 +336,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
                        heights = c(1, 1, 2.5))
   
   
-  ggsave(filename = paste0(Region, '_ninetieth_', day, '.jpeg'),
+  ggsave(filename = paste0(Region, '_ninetieth_', day, '_', season, '_', weekend, '_', delay_target_x, 'min_target.jpeg'),
          plot = ga,
          width = 6, height = 7)
   
@@ -358,122 +374,95 @@ ninetieth_day_NAS
 
 max_delay_target = c(2, 5, 15)
 
-# Loop over targets 
+# Loop over season x weekend combinations
 
-for(delay_target_x in max_delay_target){
-    
+for(sw in 1:nrow(ninetieth_day_NAS)){
+  # sw = 1
+  season = ninetieth_day_NAS[sw, 'season']
+  weekend = ninetieth_day_NAS[sw, 'weekend']
   
-  staff_models = vector()
+  # Loop over targets 
   
-  # save to PDF
-  fn = paste0('NOTAM_Staffing_', formatC(delay_target_x, width = 2, flag = 0),'min_target.pdf')
-  
-  pdf(fn, width = 10, height = 8)
-  
-  for(Region_x in unique(ninetieth_days$Region)){
+  for(delay_target_x in max_delay_target){
+    # delay_target_x = 15    
+    staff_models = vector()
     
-    # Region_x = 'Eastern'
-    # delay_target_x = 2
+    # save to PDF
+    fn = paste0('NOTAM_Staffing_', season, '_', weekend, '_', formatC(delay_target_x, width = 2, flag = 0),'min_target.pdf')
     
-    demand_days_of_interest = ninetieth_day_NAS['date']
-      # as.Date(ninetieth_days[ninetieth_days$Region == Region,'date'])
+    pdf(fn, width = 10, height = 8)
     
-    # Count in the region on the demand day
-    count_on_demand_day = ninetieth_days[ninetieth_days$Region == Region_x,'daily_count']
+    for(Region_x in unique(ninetieth_days$Region)){
+      
+      # Region_x = 'Eastern'
 
-    # Run busy day analysis ----
-    distinct_days = day_sums$date
-    
-    if(exists("demand_days_of_interest")){
-      if(length(demand_days_of_interest > 0)){
-        distinct_days = unique(distinct_days[distinct_days %in% demand_days_of_interest])
-      }
-    }
-    
-    number_of_busy_days_to_analyze <- length(distinct_days)
-  
-  
-    day = as.Date(demand_days_of_interest$date)
-    print(day)
-    
-    bod <- day
-    eod <- day + 1  
-    
-    this_day = orig_dt_hr %>% filter(date == bod & Region == Region_x)
-    
-    gp <- ggplot(data = this_day,
-                 aes(x = yr_hour,
-                     y = hourly_count)) +
-      geom_point() +
-      geom_text(aes(label = hourly_count), nudge_y = 4) +
-      geom_line() +
-      ggtitle(paste(Region_x, bod, ', Busy Period Percentile:', 100* 0.9 ) ) +
-      theme_bw()
-    
-    print(gp)
-    
-    # staff model 90 ----    
-    # populate the base model  
-  
-    # Make an guess about high and low staffing based on total NOTAM count, then optimize
-    # 1. high med low are set up using a rule of thumb, with floors set
-    # 2. The identity of which third of the day is set to high, med, or low is set here
-    # 3. Then we use a while loop to get to the target max_delay value
-    
-    shift_length = 8L
-    
-    high = floor(count_on_demand_day / 80); high = ifelse(high < 2, 2, high)
-    med = floor(count_on_demand_day / 180); med = ifelse(med < 1, 1, med)
-    low = floor(count_on_demand_day / 240); low = ifelse(low < 1, 1, low)
-    
-    shift_hour_starts <- this_day %>%
-      ungroup() %>%
-      mutate(day_thirds = cut(as.numeric(this_day$hour), 3)) %>%
-      group_by(day_thirds) %>%
-      summarize(sum_thirds = sum(hourly_count)) %>%
-      ungroup() %>%
-      summarize(
-                high = c('00', '08', '16')[which(sum_thirds == max(sum_thirds))],
-                med = c('00', '08', '16')[which(sum_thirds != max(sum_thirds) & sum_thirds != min(sum_thirds))],
-                low = c('00', '08', '16')[which(sum_thirds == min(sum_thirds))])
-    
-    # Order of shifts
-    first_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) == min(as.numeric(shift_hour_starts)))]
-    second_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) != min(as.numeric(shift_hour_starts)) & 
-                                             as.numeric(shift_hour_starts) != max(as.numeric(shift_hour_starts)))]
-    third_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) == max(as.numeric(shift_hour_starts)))]
-    
-    # Establish the base model. This will get optimized to the max delay
-    hourly_staff_model = c(rep(get(names(first_shift)), shift_length),
-                           rep(get(names(second_shift)), shift_length),
-                           rep(get(names(third_shift)), shift_length))
-                           
-    
-  ### Calculate, plot, and report ----
-  
-    staff_reqd <- compute_staff_reqd(day = day,
-                                     processing_time_in_minutes = 3,
-                                     hourly_staff_model = hourly_staff_model,
-                                     Region = Region_x)
-    
-    max_delay = round(staff_reqd$max_minutes_delay)
-    
-    while(max_delay > delay_target_x){
-      # In which shift does max delay occurs in? Add staff there
+      demand_day_of_interest = ninetieth_day_NAS[ninetieth_day_NAS$season == season &
+                                                    ninetieth_day_NAS$weekend == weekend, 'date']
+        # as.Date(ninetieth_days[ninetieth_days$Region == Region,'date'])
       
-      add_to_this_shift = ifelse(as.numeric(staff_reqd$hour_of_max_delay) < as.numeric(second_shift), 'first_shift',
-                                 ifelse(as.numeric(staff_reqd$hour_of_max_delay) >= as.numeric(third_shift), 'third_shift',
-                                        'second_shift'))
-      add_to_this_shift <- names(get(add_to_this_shift))
-      # add one staff to the shift to add to 
+      # Count in the region on the demand day
+      count_on_demand_day = ninetieth_days[ninetieth_days$Region == Region_x,'daily_count']
+  
+      # Run busy day analysis ----
+      day = demand_day_of_interest
+      print(day)
       
-      assign(add_to_this_shift, get(add_to_this_shift) + 1)
-                                 
+      bod <- day
+      eod <- day + 1  
       
-       hourly_staff_model = c(rep(get(names(first_shift)), shift_length),
-                              rep(get(names(second_shift)), shift_length),
-                              rep(get(names(third_shift)), shift_length))
-       
+      this_day = orig_dt_hr %>% filter(date == bod & Region == Region_x)
+      
+      gp <- ggplot(data = this_day,
+                   aes(x = yr_hour,
+                       y = hourly_count)) +
+        geom_point() +
+        geom_text(aes(label = hourly_count), nudge_y = 4) +
+        geom_line() +
+        xlab('Hour (UTC)') + ylab('Hourly NOTAM count') +
+        ggtitle(paste(Region_x, bod, ', Busy Period Percentile:', 100* 0.9, '\n', season, weekend)) +
+        theme_bw()
+      
+      print(gp)
+      
+      # staff model 90 ----    
+      # populate the base model  
+    
+      # Make an guess about high and low staffing based on total NOTAM count, then optimize
+      # 1. high med low are set up using a rule of thumb, with floors set
+      # 2. The identity of which third of the day is set to high, med, or low is set here
+      # 3. Then we use a while loop to get to the target max_delay value
+      
+      shift_length = 8L
+      
+      high = floor(count_on_demand_day / 150); high = ifelse(high < 2, 2, high)
+      med = floor(count_on_demand_day / 250); med = ifelse(med < 1, 1, med)
+      low = floor(count_on_demand_day / 300); low = ifelse(low < 1, 1, low)
+      
+      shift_hour_starts <- this_day %>%
+        ungroup() %>%
+        mutate(day_thirds = cut(as.numeric(this_day$hour), 3)) %>%
+        group_by(day_thirds) %>%
+        summarize(sum_thirds = sum(hourly_count)) %>%
+        ungroup() %>%
+        summarize(
+                  high = c('00', '08', '16')[which(sum_thirds == max(sum_thirds))],
+                  med = c('00', '08', '16')[which(sum_thirds != max(sum_thirds) & sum_thirds != min(sum_thirds))],
+                  low = c('00', '08', '16')[which(sum_thirds == min(sum_thirds))])
+      
+      # Order of shifts
+      first_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) == min(as.numeric(shift_hour_starts)))]
+      second_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) != min(as.numeric(shift_hour_starts)) & 
+                                               as.numeric(shift_hour_starts) != max(as.numeric(shift_hour_starts)))]
+      third_shift = shift_hour_starts[which(as.numeric(shift_hour_starts) == max(as.numeric(shift_hour_starts)))]
+      
+      # Establish the base model. This will get optimized to the max delay
+      hourly_staff_model = c(rep(get(names(first_shift)), shift_length),
+                             rep(get(names(second_shift)), shift_length),
+                             rep(get(names(third_shift)), shift_length))
+                             
+      
+    ### Calculate, plot, and report ----
+    
       staff_reqd <- compute_staff_reqd(day = day,
                                        processing_time_in_minutes = 3,
                                        hourly_staff_model = hourly_staff_model,
@@ -481,26 +470,52 @@ for(delay_target_x in max_delay_target){
       
       max_delay = round(staff_reqd$max_minutes_delay)
       
+      while(max_delay > delay_target_x){
+        # In which shift does max delay occurs in? Add staff there
+        
+        add_to_this_shift = ifelse(as.numeric(staff_reqd$hour_of_max_delay) < as.numeric(second_shift), 'first_shift',
+                                   ifelse(as.numeric(staff_reqd$hour_of_max_delay) >= as.numeric(third_shift), 'third_shift',
+                                          'second_shift'))
+        add_to_this_shift <- names(get(add_to_this_shift))
+        # add one staff to the shift to add to 
+        
+        assign(add_to_this_shift, get(add_to_this_shift) + 1)
+                                   
+        
+         hourly_staff_model = c(rep(get(names(first_shift)), shift_length),
+                                rep(get(names(second_shift)), shift_length),
+                                rep(get(names(third_shift)), shift_length))
+         
+        staff_reqd <- compute_staff_reqd(day = day,
+                                         processing_time_in_minutes = 3,
+                                         hourly_staff_model = hourly_staff_model,
+                                         Region = Region_x)
+        
+        max_delay = round(staff_reqd$max_minutes_delay)
+        
+        
+      } # end while
       
-    } # end while
+      plot_staffing_model_focus(day, staff_reqd, Region_x,
+                                focus_inset = F)
+      
+      # Save staffing model for this target
+      hourly_staff_df_x = data.frame(hourly_staff_model = hourly_staff_model,
+                                      hour = formatC(0:23, width = 2, flag = 0))
+      staff_model_df_x = this_day %>% select(-hourly_count_rank, -peak2, -peak3)
+      staff_model_df_x = left_join(hourly_staff_df_x, staff_model_df_x, by = 'hour')
+      
+      staff_models = rbind(staff_models, as.data.frame(staff_model_df_x))
+      
+      
+    } # end loop over regions
     
-    plot_staffing_model_focus(day, staff_reqd, Region_x,
-                              focus_inset = F)
+    write.csv(staff_models,
+              file = paste('Staff_models_90th_', season, '_', weekend, '_', delay_target_x, 'min_target.csv'),
+              row.names = F)
     
-    # Save staffing model for this target
-    staff_model_df_x = this_day %>% select(-hourly_count_rank, -peak2, -peak3)
-    staff_model_df_x$hourly_staffing_model = hourly_staff_model
+    dev.off(); system(paste('open', fn))
     
-    staff_models = rbind(staff_models, as.data.frame(staff_model_df_x))
-    
-    
-  } # end loop over regions
+  } # end loop over targets
   
-  write.csv(staff_models,
-            file = paste('Staff_models_90th_', delay_target_x, 'min_target.csv'),
-            row.names = F)
-  
-  dev.off(); system(paste('open', fn))
-  
-} # end loop over targets
-
+} # end loop over season x weekend combinations
