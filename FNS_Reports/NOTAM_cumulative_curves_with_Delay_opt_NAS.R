@@ -536,6 +536,8 @@ write.csv(all_staff_models,
 
 # Summarize all staff models ----
 
+# Maximum staff needed for the 2 min delay target
+
 all_staff_models %>%
   filter(target == 2 & !is.na(target) & !is.na(season)) %>%
   group_by(Region, season, weekend) %>%
