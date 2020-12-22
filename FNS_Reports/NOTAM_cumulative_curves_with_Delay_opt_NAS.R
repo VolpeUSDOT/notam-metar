@@ -7,7 +7,7 @@
 
 # Setup ----
 
-if(grepl(getwd(), 'notam-metar$')){
+if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
 
@@ -21,10 +21,15 @@ load("FNS_NOTAM_Freq_w_busy_days.RData")
 library(ggplot2)
 library(grid)
 library(gridExtra)
-# library(gtable)
 library(dplyr)
 library(reshape2)
 library(tidyr)
+
+output_dir = 'Results'
+
+if(!dir.exists(output_dir)){ dir.create(output_dir) }
+
+max_delay_target = c(2, 5, 15) # In minutes
 
 # Find percentile days ----
 
@@ -44,7 +49,7 @@ pctile_days = day_sums %>%
 
 ninetieth = pctile_days %>% filter(quantile == 0.9)
 
-# Which days are the 90th percentile demand day by service area?
+# Which days are the 90th percentile by service area?
 
 ninetieth_days = vector()
 
@@ -129,8 +134,6 @@ compute_staff_reqd <- function(day,
   
   # day = as.Date("2019-02-24")
   # hourly_staff_model = c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 9, 9, 9, 9, 9, 9, 9, 9, 3, 3, 3)
-  # hourly_staff_model = c(3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 9, 3, 3, 3)
-  
   # processing_time_in_minutes = 3
   # Region = 'Western'
 
@@ -157,7 +160,6 @@ compute_staff_reqd <- function(day,
   seconds_per_minute = 60L
   
   # Begin implementing staffing model
-  # Can start while loop here for delay calcs
   minute_by_minute_staff_model = rep(hourly_staff_model, each = minutes_per_hour)
   
   # Set up data frame for processing
@@ -336,7 +338,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
                        heights = c(1, 1, 2.5))
   
   
-  ggsave(filename = paste0(Region, '_ninetieth_', day, '_', season, '_', weekend, '_', delay_target_x, 'min_target.jpeg'),
+  ggsave(filename = file.path(output_dir, paste0(Region, '_ninetieth_', day, '_', season, '_', weekend, '_', delay_target_x, 'min_target.jpeg')),
          plot = ga,
          width = 6, height = 7)
   
@@ -371,8 +373,9 @@ ninetieth_days
 
 ninetieth_day_NAS
 
+# set up blank data frame to save all staff model targets
 
-max_delay_target = c(2, 5, 15)
+all_staff_models = vector()
 
 # Loop over season x weekend combinations
 
@@ -390,7 +393,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
     # save to PDF
     fn = paste0('NOTAM_Staffing_', season, '_', weekend, '_', formatC(delay_target_x, width = 2, flag = 0),'min_target.pdf')
     
-    pdf(fn, width = 10, height = 8)
+    pdf(file.path(output_dir, fn), width = 10, height = 8)
     
     for(Region_x in unique(ninetieth_days$Region)){
       
@@ -511,11 +514,34 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
     } # end loop over regions
     
     write.csv(staff_models,
-              file = paste('Staff_models_90th_', season, '_', weekend, '_', delay_target_x, 'min_target.csv'),
+              file = file.path(output_dir, 
+                               paste0('Staff_models_90th_', season, '_', weekend, '_', delay_target_x, 'min_target.csv')),
               row.names = F)
     
-    dev.off(); system(paste('open', fn))
+    dev.off(); system(paste('open', file.path(output_dir, fn)))
     
+    # Save with targets
+    all_staff_models = rbind(all_staff_models, data.frame(staff_models, 
+                                                          target = delay_target_x))
   } # end loop over targets
   
 } # end loop over season x weekend combinations
+
+write.csv(all_staff_models,
+          file = file.path(output_dir, 
+                           paste0('All_Staff_models.csv')),
+          row.names = F)
+
+
+
+# Summarize all staff models ----
+
+all_staff_models %>%
+  filter(target == 2 & !is.na(target) & !is.na(season)) %>%
+  group_by(Region, season, weekend) %>%
+  summarize(max_staff = max(hourly_staff_model)) %>%
+  pivot_wider(id_cols = c(season, weekend),
+              names_from = Region,
+              values_from = c(max_staff)) %>%
+  rowwise() %>%
+  mutate(Total = sum(Central, Eastern, Western))

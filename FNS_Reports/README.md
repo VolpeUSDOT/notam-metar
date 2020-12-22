@@ -1,0 +1,44 @@
+# Staff model analysis of NOTAMS by Service Area
+
+- Creates optimized staffing models by Service Area for the 90th percentile busiest days across the whole NAS
+- Does this for the 90th percentile day in each of season x weekend/weekday type combination, 8 days in total
+
+## Data
+
+- NOTAMS were downloaded from the EN2 FSS NOTAM Action Report query tool at the FNS Reports page: `https://notams.aim.faa.gov/fnsreports/main.html`.
+  + Downloaded files are named as `report_2423572413724759606.csv`, with the file name being a unique identifier for the download. Files need to be concatenated together to be useful. 
+  + Each file represents 7 - 10 days of NOTAM records.
+  + NOTAM action reports were downloaded with `Status = All`,  
+- `FNS_Regions.xlsx` was compiled manually with input from FAA staff to assign FPAs to Service Areas
+
+
+## How to run
+
+This process was developed with the statistical programming language R, using R version 4.0.2, and edited in RStudio Desktop. 
+
+Either clone the git repository (see below) or request a .zip file containing the code, and place it in a directory named `notam-metar`. Data files should be in a folder named `Data` within this directory.
+
+There are two scripts for this work. 
+
+1. `NOTAM_FNS_Analysis.Rmd`
+  + Compiles downloaded files into one data frame, and saves as `FNS_Reports.RData` as a single compressed file for easier reuse.
+  + Prepares initial data data assessment
+  + Filters out identical NOTAM IDs that occur within 10 minutes of each other, as well as NOTAM types 'Initiated' or 'Submitted for Review'. 
+  + Makes histograms by Service Area, by season and weekend
+  + Prepares data for detailed analysis and saves as `FNS_NOTAM_Freq_w_busy_days.RData` for next step.
+  
+  
+2. `NOTAM_cumulative_curves_with_Delay_opt_NAS.R`
+  + Starts from `FNS_NOTAM_Freq_w_busy_days.RData`
+  + Identifies 90th percentile days by season and weekend, or optionally by Service Area
+  + Calculates staff needed using an optimization method on the function `compute_staff_reqd()` to find the staff needed to achieve a specified maximum NOTAM processing delay target (e.g., 2 minutes)
+  + Plots the results in compiled PDFs and additionally as individual .jpeg files using the function `plot_staffing_model_focus()`
+  
+
+
+## Code 
+
+This code is maintained in `https://github.com/VolpeUSDOT/notam-metar/`. Contact `daniel.flynn@dot.gov` for access.
+
+This code directory is `FNS_Reports`, within the `notam-metar` repository. The other contents of the repository include code for previous analyses of NOTAM frequency, as well as code for an analysis of METARs.
+

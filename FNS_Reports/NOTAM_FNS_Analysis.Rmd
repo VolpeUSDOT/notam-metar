@@ -19,8 +19,7 @@ Goals:
 - Produce visuals of NOTAM frequencies by date, with data downloaded from FNS Reports site
 - Filter out NOTAMS within 10 minutes of the same ID
 - Frequency distributions of counts of NOTAMs by date
-- Generate staffing models (Type 1, 90th percentile demand day), by service area 
-
+- Prepare data for staffing models by service area 
 
 
 ```{r setup, echo = F, message=F}
@@ -324,8 +323,9 @@ dev.off()
 
 ```
 
-# Staffing model analysis
+# Staffing model analysis prep
 
+Prepares data for staffing model work.
 
 ```{r busy_period_param}
 # begin: busy period search parameters ----
@@ -389,24 +389,8 @@ dt_hr <- dt %>%
   
 ```
 
-```{r staffing}
+```{r staffing_prep}
 
-# Adding staffing models ----
-
-# Add to dt_hr the staffing models.
-# Staffing Models
-
-# - Dynamic Seasonal Round-Up - Use the values from the exploratory data analysis (NOTAM_Freq_Analysis.Rmd..) and get the staff needed for each time period by:
-#   --Season: Winter/Spring/Summer/Fall
-#   -- Weekend/Weekday:
-#   -- Off/Valley/Peak intraday
-#   -- Round up the number of estimated NOTAMs, convert to integer number of staff required per hour, to completely cover the NOTAM per hour, even if excess capacity will accumulate
-# - Dynamic Seasonal Round-Down
-#    -- Same as above, but when calculating staff required to cover NOTAMs per hour, allow for a backlog to potentially accumulate by rounding down to the next smallest integer number of staff required.
-# - Dynamic Aseasonal
-# Same as above, but without seasonal variation, only weekend/weekday and intraday
-
-# For the dynamic staffing models, we need to add season, weekend/weekday, and intraday periods to orig_df_hr data frame.
 orig_dt_hr <- dt_hr %>%
   mutate(date = as.Date(yr_hour), 
          dow = format(yr_hour, '%A'),
