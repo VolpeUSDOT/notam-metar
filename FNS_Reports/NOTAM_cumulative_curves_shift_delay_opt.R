@@ -1,19 +1,20 @@
-# Setup ----
-# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
-
 # Adapted for FNS reports of NOTAMs, with service area added
 
 # Adding a step to optimize the staffing needed
 
 # Setup ----
 
+# Get dependencies if not already installed
+source('Utility/get_packages.R')
+
+# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
 if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
 
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
-  source('NOTAM_FNS_Analysis.Rmd')
+  rmarkdown::render('NOTAM_FNS_Analysis.Rmd')
 }
 
 load("FNS_NOTAM_Freq_w_busy_days.RData")
@@ -228,37 +229,7 @@ compute_staff_reqd <- function(day,
   }
 
 
-plot_staffing_model_simple <- function(s_df_long){
-  # print(head(s_df_long))
-  # begin: plot cumulative curves
-  p <- ggplot(data = s_df_long) + xlab("minute") 
-  
-  pc <- p + 
-    geom_step(data = s_df_long %>% filter(variable != "staff_available") , aes(minute, value / 100, colour = variable, linetype = variable)) +
-    geom_line(data = s_df_long %>% filter(variable == "staff_available") , aes(minute, value      , colour = variable)) +
-    guides(colour = "legend", linetype = FALSE) +
-    scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Departing Queue", "Staffing Level")) +
-    scale_linetype_discrete() +
-    theme(legend.position = "top") +
-    ylab("Cumulative NOTAMs (100s) / Staffing Level") +
-    labs(
-      title = paste(Region, 'Service Area -', day),
-      subtitle = (
-        paste(              
-          "Avg. delay-minutes: ", average_minutes_delay,               
-          "; Max delay-minutes: ", max_minutes_delay, 
-          # "; Avg. minutes in system: ", average_minutes_in_system, 
-          # "; Max minutes in system: ", max_minutes_in_system, 
-          "; Staff hours doing non-NOTAM tasks: ", round(staff_minutes_doing_non_NOTAM_tasks / 60, 1), 
-          "; Staff total hours: ", round(total_staff_minutes / 60, 1)
-        )
-      )
-    )
-  return(pc)
-  # end: plot cumulative curves
-}
-
-# Alternative plotting function, with three panels, and optional 'focus' plot to zoom in on one hour 
+# Plotting function, with three panels, and optional 'focus' plot to zoom in on one hour 
 
 plot_staffing_model_focus <- function(day, staff_reqd,
                                  Region,

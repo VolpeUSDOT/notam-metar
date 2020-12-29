@@ -28,12 +28,14 @@ There are two scripts for this work.
   + Prepares data for detailed analysis and saves as `FNS_NOTAM_Freq_w_busy_days.RData` for next step.
   
   
-2. `NOTAM_cumulative_curves_with_Delay_opt_NAS.R`
+2a. `NOTAM_cumulative_curves_shift_delay_opt.R`
   + Starts from `FNS_NOTAM_Freq_w_busy_days.RData`
   + Identifies 90th percentile days by season and weekend, or optionally by Service Area
   + Calculates staff needed using an optimization method on the function `compute_staff_reqd()` to find the staff needed to achieve a specified maximum NOTAM processing delay target (e.g., 2 minutes)
   + Plots the results in compiled PDFs and additionally as individual .jpeg files using the function `plot_staffing_model_focus()`
   
+2b. `NOTAM_cumulative_curves_staggered_delay_opt.R`
+  + Similar to above, but instead of 3 8-hour shifts in the day, each staff member is allowed to start at any hour of the day. 
 
 
 ## Code 

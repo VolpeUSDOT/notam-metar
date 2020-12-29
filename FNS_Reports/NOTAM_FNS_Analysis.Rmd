@@ -25,6 +25,8 @@ Goals:
 ```{r setup, echo = F, message=F}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
+source('Utility/get_packages.R')
+
 library(tidyverse)
 library(plotly)    # for interactive plots
 library(kableExtra)# for better tables
