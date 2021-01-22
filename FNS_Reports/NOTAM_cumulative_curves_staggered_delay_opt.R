@@ -5,13 +5,13 @@
 
 # Setup ----
 
-# Get dependencies if not already installed
-source('Utility/get_packages.R')
-
 # Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
 if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
+
+# Get dependencies if not already installed
+source('Utility/get_packages.R')
 
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
@@ -525,5 +525,21 @@ all_staff_models %>%
   pivot_wider(id_cols = c(season, weekend),
               names_from = Region,
               values_from = c(max_staff)) %>%
+  rowwise() %>%
+  mutate(Total = sum(Central, Eastern, Western))
+
+
+# Total staff hours
+
+# all_staff_models = read.csv(file.path('Results_Staggered_0', 'All_Staff_models.csv'))
+
+all_staff_models %>%
+  filter(target == 2 & !is.na(target) & !is.na(season)) %>%
+  group_by(Region, season, weekend) %>%
+  summarize(sum_staff = sum(hourly_staff_model),
+            max_staff = max(hourly_staff_model)) %>%
+  pivot_wider(id_cols = c(season, weekend),
+              names_from = Region,
+              values_from = c(sum_staff)) %>%
   rowwise() %>%
   mutate(Total = sum(Central, Eastern, Western))

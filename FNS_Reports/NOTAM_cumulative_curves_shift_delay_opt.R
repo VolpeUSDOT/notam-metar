@@ -4,13 +4,13 @@
 
 # Setup ----
 
-# Get dependencies if not already installed
-source('Utility/get_packages.R')
-
 # Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
 if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
+
+# Get dependencies if not already installed
+source('Utility/get_packages.R')
 
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
@@ -237,6 +237,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
                                  focus_start = "11:00:00",
                                  focus_range = c(550, 650)) {
   # For testing: 
+  # First, run compute_staff_reqd() function with a staffing model on a specific day. Then test this function using these or similar values:
   # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Western'
 
   # staff_reqd is a list, output from compute_staff_reqd() function.
@@ -288,8 +289,21 @@ plot_staffing_model_focus <- function(day, staff_reqd,
           legend.text = element_text(size = 10)) +   
   ylab("Staffing Level \n")
   
+    
+  # pc_top_2 <- p + 
+  #   geom_line(data = s_df_long %>% filter(variable == "cml_staff_hours_available") , 
+  #             aes(minute, value),
+  #             size = 1.25, colour = 'darkgreen') +
+  #   theme(legend.position = "none", # Remove the legend
+  #         axis.title.x = element_blank(),
+  #         axis.text.x = element_blank(),
+  #         axis.ticks.x = element_blank(),
+  #         axis.text = element_text(size = 10),
+  #         axis.title = element_text(size = 10)) +   
+  #   ylab("Cumulative hours avail. \n for non-NOTAM tasks")
+
   pc_top_2 <- p + 
-    geom_line(data = s_df_long %>% filter(variable == "cml_staff_hours_available") , 
+    geom_smooth(data = s_df_long %>% filter(variable == "staff_minutes_available") , 
               aes(minute, value),
               size = 1.25, colour = 'darkgreen') +
     theme(legend.position = "none", # Remove the legend
@@ -298,7 +312,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
           axis.ticks.x = element_blank(),
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10)) +   
-    ylab("Cumulative hours avail. \n for non-NOTAM tasks")
+    ylab("Staff minutes available \n for non-NOTAM tasks")
   
   # Put these together. egg::ggarrange is better than grid.arrange, because it preserves common axes correctly.
 
