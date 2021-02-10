@@ -30,7 +30,7 @@ output_dir = 'Results'
 
 if(!dir.exists(output_dir)){ dir.create(output_dir) }
 
-max_delay_target = c(2, 5, 15) # In minutes
+max_delay_target = c(2, 5, 15) # c(2,5, 15) In minutes
 
 # Find percentile days ----
 
@@ -238,7 +238,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
                                  focus_range = c(550, 650)) {
   # For testing: 
   # First, run compute_staff_reqd() function with a staffing model on a specific day. Then test this function using these or similar values:
-  # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Western'
+  # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Eastern'
 
   # staff_reqd is a list, output from compute_staff_reqd() function.
   s_df = staff_reqd$staff_df
@@ -270,12 +270,14 @@ plot_staffing_model_focus <- function(day, staff_reqd,
         paste(              
           "Avg. delay-minutes: ", staff_reqd$average_minutes_delay,               
           "; Max delay-minutes: ", staff_reqd$max_minutes_delay,
-          "\n Staff hours doing non-NOTAM tasks: ", round(staff_reqd$staff_minutes_doing_non_NOTAM_tasks / 60, 1),
+          "\n Staff hours available for non-NOTAM tasks: ", round(staff_reqd$staff_minutes_doing_non_NOTAM_tasks / 60, 1),
           "; Staff total hours: ", round(staff_reqd$total_staff_minutes / 60, 1)
         )
       )
     )
   
+  staff_range = range(s_df_long %>% filter(variable == 'staff_available') %>% select(value))
+
   pc_top <- p + 
     geom_line(data = s_df_long %>% filter(variable == "staff_available") , 
               aes(minute, value),
@@ -287,32 +289,30 @@ plot_staffing_model_focus <- function(day, staff_reqd,
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10),
           legend.text = element_text(size = 10)) +   
-  ylab("Staffing Level \n")
+  ylab("Staffing level \n")
   
-    
-  # pc_top_2 <- p + 
-  #   geom_line(data = s_df_long %>% filter(variable == "cml_staff_hours_available") , 
-  #             aes(minute, value),
-  #             size = 1.25, colour = 'darkgreen') +
-  #   theme(legend.position = "none", # Remove the legend
-  #         axis.title.x = element_blank(),
-  #         axis.text.x = element_blank(),
-  #         axis.ticks.x = element_blank(),
-  #         axis.text = element_text(size = 10),
-  #         axis.title = element_text(size = 10)) +   
-  #   ylab("Cumulative hours avail. \n for non-NOTAM tasks")
+  if(diff(staff_range) > 0){
+    pc_top <- pc_top + scale_y_continuous(n.breaks = diff(staff_range)+1) 
+  }
 
   pc_top_2 <- p + 
-    geom_smooth(data = s_df_long %>% filter(variable == "staff_minutes_available") , 
-              aes(minute, value),
-              size = 1.25, colour = 'darkgreen') +
     theme(legend.position = "none", # Remove the legend
           axis.title.x = element_blank(),
           axis.text.x = element_blank(),
           axis.ticks.x = element_blank(),
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10)) +   
-    ylab("Staff minutes available \n for non-NOTAM tasks")
+    ylab("Staff available \n per minute")
+  
+  if(diff(staff_range) > 0){
+    pc_top_2 <- pc_top_2 + geom_smooth(data = s_df_long %>% filter(variable == "staff_available") , 
+                aes(minute, value),
+                size = 1.25, colour = 'darkgreen') 
+  } else {
+    pc_top_2 <- pc_top_2 + geom_line(data = s_df_long %>% filter(variable == "staff_available") , 
+                                       aes(minute, value),
+                                       size = 1.25, colour = 'darkgreen') 
+  }
   
   # Put these together. egg::ggarrange is better than grid.arrange, because it preserves common axes correctly.
 
