@@ -126,6 +126,8 @@ for(sw in unique(pctile_day_NAS$season_we)){
 
 ninetieth_day_NAS
 
+write.csv(ninetieth_day_NAS, file = 'Ninetieth_day_NAS.csv', row.names = F)
+
 # Define functions ----
 
 compute_staff_reqd <- function(day, 

@@ -26,7 +26,7 @@ library(dplyr)
 library(reshape2)
 library(tidyr)
 
-output_dir = 'Results_Staggered_4'
+output_dir = 'Results_Staggered'
 
 if(!dir.exists(output_dir)){ dir.create(output_dir) }
 
@@ -232,13 +232,14 @@ compute_staff_reqd <- function(day,
 # Plotting function, with three panels, and optional 'focus' plot to zoom in on one hour 
 
 plot_staffing_model_focus <- function(day, staff_reqd,
-                                 Region,
-                                 focus_inset = TRUE,
-                                 focus_start = "11:00:00",
-                                 focus_range = c(550, 650)) {
+                                      Region,
+                                      focus_inset = TRUE,
+                                      focus_start = "11:00:00",
+                                      focus_range = c(550, 650)) {
   # For testing: 
-  # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Western'
-
+  # First, run compute_staff_reqd() function with a staffing model on a specific day. Then test this function using these or similar values:
+  # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Eastern'
+  
   # staff_reqd is a list, output from compute_staff_reqd() function.
   s_df = staff_reqd$staff_df
   
@@ -248,11 +249,11 @@ plot_staffing_model_focus <- function(day, staff_reqd,
   # begin: plot cumulative curves
   # two panels, one showing just the cumulative curve and the other showing staff count and staff time available for non-NOTAM tasks 
   p <- ggplot(data = s_df_long) + xlab("Time (UTC)")
-
+  
   pc <- p + 
     geom_step(data = s_df_long %>% filter(variable %in% c("cml_arrivals", "cml_msgs_departed_from_queue")),
               aes(minute, value, colour = variable),
-                  size = 1.25) +
+              size = 1.25) +
     
     guides(colour = "legend", linetype = FALSE) +
     scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing", "NOTAMs Departing Queue")) +
@@ -269,11 +270,13 @@ plot_staffing_model_focus <- function(day, staff_reqd,
         paste(              
           "Avg. delay-minutes: ", staff_reqd$average_minutes_delay,               
           "; Max delay-minutes: ", staff_reqd$max_minutes_delay,
-          "\n Staff hours doing non-NOTAM tasks: ", round(staff_reqd$staff_minutes_doing_non_NOTAM_tasks / 60, 1),
+          "\n Staff hours available for non-NOTAM tasks: ", round(staff_reqd$staff_minutes_doing_non_NOTAM_tasks / 60, 1),
           "; Staff total hours: ", round(staff_reqd$total_staff_minutes / 60, 1)
         )
       )
     )
+  
+  staff_range = range(s_df_long %>% filter(variable == 'staff_available') %>% select(value))
   
   pc_top <- p + 
     geom_line(data = s_df_long %>% filter(variable == "staff_available") , 
@@ -286,22 +289,33 @@ plot_staffing_model_focus <- function(day, staff_reqd,
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10),
           legend.text = element_text(size = 10)) +   
-  ylab("Staffing Level \n")
+    ylab("Staffing level \n")
+  
+  if(diff(staff_range) > 0){
+    pc_top <- pc_top + scale_y_continuous(n.breaks = diff(staff_range)+1) 
+  }
   
   pc_top_2 <- p + 
-    geom_line(data = s_df_long %>% filter(variable == "cml_staff_hours_available") , 
-              aes(minute, value),
-              size = 1.25, colour = 'darkgreen') +
     theme(legend.position = "none", # Remove the legend
           axis.title.x = element_blank(),
           axis.text.x = element_blank(),
           axis.ticks.x = element_blank(),
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10)) +   
-    ylab("Cumulative hours avail. \n for non-NOTAM tasks")
+    ylab("Staff available \n per minute")
+  
+  if(diff(staff_range) > 0){
+    pc_top_2 <- pc_top_2 + geom_smooth(data = s_df_long %>% filter(variable == "staff_available") , 
+                                       aes(minute, value),
+                                       size = 1.25, colour = 'darkgreen') 
+  } else {
+    pc_top_2 <- pc_top_2 + geom_line(data = s_df_long %>% filter(variable == "staff_available") , 
+                                     aes(minute, value),
+                                     size = 1.25, colour = 'darkgreen') 
+  }
   
   # Put these together. egg::ggarrange is better than grid.arrange, because it preserves common axes correctly.
-
+  
   ga <- egg::ggarrange(pc_top,
                        pc_top_2,
                        pc,
@@ -327,11 +341,12 @@ plot_staffing_model_focus <- function(day, staff_reqd,
            plot = focus_pc,
            width = 5, height = 4)
     
-     
+    
   }
   
   # end: plot cumulative curves
 }
+
 
 
 
@@ -449,7 +464,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
         
         # If not midnight, subtract one hour to start the shift the hour before the max delay occurs
         # Change the term `recenter_the_shift` to any integer between 1 and 7 move the starting time of the staffer back that many hours. Leave as 0 for the staffer to start at exactly the hour needed.
-        recenter_the_shift = 4 
+        recenter_the_shift = 0
         
         add_to_this_hour = ifelse(add_to_this_hour > recenter_the_shift,
                                   add_to_this_hour - recenter_the_shift,
