@@ -20,7 +20,7 @@ compute_staff_reqd <- function(day,
   
   arrivals_on_day <- dt[dt$Action.Date >= day_as_datetime &
                           dt$Action.Date < day_as_datetime + 60*60*24 &
-                          dt$Region == Region,]
+                          dt$Region %in% Region,]
   
   print(paste("Total NOTAMS in Period: ", count(arrivals_on_day) ))
   minute <- day_as_datetime + (minute-1)*60
@@ -113,6 +113,9 @@ plot_staffing_model_focus <- function(day, staff_reqd,
   # First, run compute_staff_reqd() function with a staffing model on a specific day. Then test this function using these or similar values:
   # day = as.Date('2019-02-24'); processing_time_in_minutes = 3; focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Eastern'
   
+  region_set_name = ifelse(length(Region) > 1,
+                           paste(Region, collapse = ' + '), Region_x)
+  
   # staff_reqd is a list, output from compute_staff_reqd() function.
   s_df = staff_reqd$staff_df
   
@@ -138,7 +141,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
           plot.caption = element_text(hjust = 0.5)) +
     ylab("Cumulative NOTAMs") +
     labs(
-      title = paste(Region, 'Service Area -', day),
+      title = paste(region_set_name, 'Service Area -', day),
       caption = (
         paste(              
           "Avg. delay-minutes: ", staff_reqd$average_minutes_delay,               
@@ -195,8 +198,9 @@ plot_staffing_model_focus <- function(day, staff_reqd,
                        ncol = 1,
                        heights = c(1, 1, 2.5))
   
+
   
-  ggsave(filename = file.path(output_dir, paste0(Region, '_ninetieth_', day, '_', season, '_', weekend, '_', delay_target_x, 'min_target.jpeg')),
+  ggsave(filename = file.path(output_dir, paste0(region_set_name, '_ninetieth_', day, '_', season, '_', weekend, '_', delay_target_x, 'min_target.jpeg')),
          plot = ga,
          width = 6, height = 7)
   
@@ -210,7 +214,7 @@ plot_staffing_model_focus <- function(day, staff_reqd,
       xlim(unclass(start_min)$minute, unclass(end_min)$minute) +
       ylim(focus_range[1], focus_range[2])
     
-    ggsave(filename = paste0('Focus_', Region, '_ninetieth_', day, '.jpeg'),
+    ggsave(filename = paste0('Focus_', region_set_name, '_ninetieth_', day, '.jpeg'),
            plot = focus_pc,
            width = 5, height = 4)
     
@@ -220,7 +224,3 @@ plot_staffing_model_focus <- function(day, staff_reqd,
   # end: plot cumulative curves
 }
 
-
-
-
-# <<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>>
