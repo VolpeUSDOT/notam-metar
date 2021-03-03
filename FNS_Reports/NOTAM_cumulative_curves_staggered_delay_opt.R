@@ -7,18 +7,26 @@
 
 
 # <<>><<>><<>>
-# User inputs
+# User inputs - Three required inputs
 
-# Specify a single integer, or a vector of integers for the delay targets
+# 1. Specify a single integer, or a vector of integers for the delay targets
 max_delay_target = c(2, 5, 15) 
 
-# Specify where to save the results. Any character string can be used here; it will become a directory where the output is saved.
-output_dir = 'Results_Staggered_Mean'
+# 2. Should this analysis use the peak (absolute maximum) delay at any time in the 24 hours period, or the average delay?
+delay_target_type = 'Max' # Options: 'Max' or 'Mean'
 
-if(!dir.exists(output_dir)){ dir.create(output_dir) }
+# 3. Specify where to save the results. Any character string can be used here; it will become a directory where the output is save.
+output_dir = 'Results_Staggered'
 
-# Should this analysis use the peak (absolute maximum) delay at any time in the 24 hours period, or the average delay?
-delay_target_type = 'Mean' # Options: 'Max' or 'Mean'
+output_dir = paste(output_dir, delay_target_type, sep = '_')
+
+if(dir.exists(output_dir)){ 
+  if(!askYesNo(msg = 'The selected output directory exists. Do you want to overwrite it?')){
+    stop('Please change the output_dir name')
+  }
+} else {
+  dir.create(output_dir)
+}
 
 # <<>><<>><<>>
 
@@ -232,7 +240,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
                                paste0('Staff_models_90th_', season, '_', weekend, '_', delay_target_x, 'min_target.csv')),
               row.names = F)
     
-    dev.off(); system(paste('open', file.path(output_dir, fn)))
+    dev.off()#; system(paste('open', file.path(output_dir, fn)))
     
     # Save with targets
     all_staff_models = rbind(all_staff_models, data.frame(staff_models, 
