@@ -28,7 +28,7 @@ source('Find_percentile_days.R')
 max_delay_target = c(2, 5, 15) 
 
 # 2. Should this analysis use the peak (absolute maximum) delay at any time in the 24 hours period, or the average delay?
-delay_target_type = 'Mean' # Options: 'Max' or 'Mean'
+delay_target_type = 'Max' # Options: 'Max' or 'Mean'
 
 # 3. Specify where to save the results. Any character string can be used here; it will become a directory where the output is save.
 output_dir = 'Results_Staggered_addRegion'

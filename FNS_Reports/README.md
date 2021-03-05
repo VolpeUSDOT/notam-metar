@@ -18,7 +18,7 @@ This process was developed with the statistical programming language R, using R 
 
 Either clone the git repository (see below) or request a .zip file containing the code, and place it in a directory named `notam-metar`. Data files should be in a folder named `Data` within this directory.
 
-There are two scripts for this work. 
+There are several scripts for this work. 
 
 1. `NOTAM_FNS_Analysis.Rmd`
   + Compiles downloaded files into one data frame, and saves as `FNS_Reports.RData` as a single compressed file for easier reuse.
@@ -26,17 +26,32 @@ There are two scripts for this work.
   + Filters out identical NOTAM IDs that occur within 10 minutes of each other, as well as NOTAM types 'Initiated' or 'Submitted for Review'. 
   + Makes histograms by Service Area, by season and weekend
   + Prepares data for detailed analysis and saves as `FNS_NOTAM_Freq_w_busy_days.RData` for next step.
-  
-  
-2a. `NOTAM_cumulative_curves_shift_delay_opt.R`
-  + Starts from `FNS_NOTAM_Freq_w_busy_days.RData`
-  + Identifies 90th percentile days by season and weekend, or optionally by Service Area
-  + Calculates staff needed using an optimization method on the function `compute_staff_reqd()` to find the staff needed to achieve a specified maximum NOTAM processing delay target (e.g., 2 minutes)
-  + Plots the results in compiled PDFs and additionally as individual .jpeg files using the function `plot_staffing_model_focus()`
-  
-2b. `NOTAM_cumulative_curves_staggered_delay_opt.R`
-  + Similar to above, but instead of 3 8-hour shifts in the day, each staff member is allowed to start at any hour of the day. 
 
+2. Function scripts.
+  + `Busy_periods_functions.R`. This has the most important part of the process, the function `compute_staff_reqd()`. This function calculates on a minute-by-minute basis how each NOTAM is processed, and what delay will occur in the processing. This script also provides the function `plot_staffing_model_focus()` which generates the visual representation of a given day and staffing model.
+  + `Find_percentile_days.R`. This script finds which days in the study period match a certain percentile of business (in terms of total number of NOTAMs received). Currently configured to find the 90th percentile days either across the NAS by season and weekday type, or for each Service Area. 
+
+3. Staffing model scripts. There are currently four options, depending on what combination of Service Areas and type of staffing model to use.  
+  + `NOTAM_cumulative_curves_shift_delay_opt.R`
+    - Starts from `FNS_NOTAM_Freq_w_busy_days.RData`
+    - Identifies 90th percentile days by season and weekend, or optionally by Service Area
+    - Calculates staff needed using an optimization method on the function `compute_staff_reqd()` to find the staff needed to achieve a specified maximum NOTAM processing delay target (e.g., 2 minutes)
+    - Plots the results in compiled PDFs and additionally as individual .jpeg files using the function `plot_staffing_model_focus()`
+    - Can do this for either the mean or max delay encountered during a 24 hour period.
+    
+  + `NOTAM_cumulative_curves_staggered_delay_opt.R`
+    - Similar to above, but instead of 3 8-hour shifts in the day, each staff member is allowed to start at any hour of the day. 
+
+  + `NOTAM_cumulative_curves_shift_delay_opt_addRegions.R`
+    - 8 hour shifts, and consecutively does just WSA, then WSA + CSA, then WSA + CSA + ESA regions instead of each Service Area separately.
+    - As before, can select either mean or max delay.
+    
+  + `NOTAM_cumulative_curves_staggered_delay_opt_addRegions.R`
+    - Staggered shifts, WSA, WSA + CSA, WSA + CSA + ESA regions.
+    
+
+4. Analysis
+  + `Compare_Staffing_Model_Analyses.R` looks at the results of the optimized models and prepares summaries for the report.
 
 ## Code 
 
