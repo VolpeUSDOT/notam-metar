@@ -90,10 +90,11 @@ cx2 <- compiled %>%
 rx2 = rx %>% left_join(cx2) %>% select(-geography)
 
 # Summary table for report. Copy to Excel then to Word.
-knitr::kable(rx2, format = 'rst')
+knitr::kable(rx2, format = 'pipe')
 
-# What percent increase in staff hours for each region seperately versus all together?
-
+# What percent increase in staff hours for each region separately versus all together?
+rx2 %>%
+  mutate(pct_ch = 100 * ( (sum_staff - sum_staff_addRegion) / sum_staff_addRegion))
 
 # Regions comparisons ----
 
