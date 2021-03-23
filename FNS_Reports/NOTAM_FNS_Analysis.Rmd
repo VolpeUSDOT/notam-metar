@@ -110,14 +110,13 @@ if(!file.exists('FNS_NOTAMS.RData')){
     mutate(dow = format(Action.Date, '%A')) %>%
     mutate(date = as.Date(Action.Date)) %>%
     mutate(year = format(Action.Date, '%Y')) %>%
-    mutate(weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 1, 0)),
-           quarter = as.factor(quarters(Action.Date)),
+    mutate(quarter = as.factor(quarters(Action.Date)),
            month   = format(Action.Date, '%m'),
            season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
                                       ifelse(month == '03' | month == '04' | month == '05', 'Spring',
                                              ifelse(month == '06' | month == '07' | month == '08', 'Summer',
                                                     ifelse(month == '09' | month == '10' | month == '11', 'Fall', NA)))))) %>% 
-      group_by(FPA, date, year, month, season, weekend) %>% 
+      group_by(FPA, date, year, month, season) %>% 
     summarize(count = n())
   
   write.csv(df, file = 'FNS_NOTAM_count_by_day.csv', row.names=F)
@@ -164,20 +163,15 @@ kable(fpa_count, format = 'simple')
 
 ### Count of NOTAMs by date
 
-With separate lines for weekend and weekday:
-
 ```{r dateplot2, warning=FALSE}
-# Rename the weekend variable values 
-we.labs = c("Weekday", "Weekend") # 0 = *weekday*, see logic in the formatting above
-levels(df$weekend) = we.labs
 
-g1.1 <- ggplot(df, aes(x = date, y = count, color = weekend)) +
+g1.1 <- ggplot(df, aes(x = date, y = count)) +
   geom_point(alpha = 0.1) +          
   geom_smooth(span = 0.1) +                                         # Add a spline through these
   theme_bw() + 
   scale_color_discrete(name = "Day of Week") +                        
   ylab("NOTAM counts") + xlab('Date') +
-  ggtitle("Count of NOTAMs by date over the study period \n Separating by weekend ")    
+  ggtitle("Count of NOTAMs by date over the study period ")    
 
 ggsave(plot = g1.1, filename = "NOTAM_Freq_timeline_we.jpg", width = 6, height = 5) 
 
@@ -185,22 +179,22 @@ ggsave(plot = g1.1, filename = "NOTAM_Freq_timeline_we.jpg", width = 6, height =
 
 ```
 
-### 2. Histograms by season + weekend/weekday
+### 2. Histograms by season
 
-This figure shows the distribution of the count of NOTAMs by date. Each bar represents a range of NOTAM counts, and the height of bar indicates number of days with that many NOTAMs. The vertical colored lines indicate the mean count of NOTAMs for that combination of season and weekend/weekday. 
+This figure shows the distribution of the count of NOTAMs by date. Each bar represents a range of NOTAM counts, and the height of bar indicates number of days with that many NOTAMs. The vertical colored lines indicate the mean count of NOTAMs for that season. 
 
 ```{r hists}
 
 # Make data frame of mean values
 df_mc <- df %>%
-  group_by(season, weekend) %>%
+  group_by(season) %>%
   summarize(mean_count = mean(count))
 
-g2 <- ggplot(df, aes(count, fill = weekend, group = weekend)) +      # Within panels, group by weekend
+g2 <- ggplot(df, aes(count)) +
   geom_histogram(color = "grey20",                                   # Create histograms
+                 fill = "#0088BB",
                  bins = 50) +
-  geom_vline(aes(xintercept = mean_count,
-                 color = weekend), data = df_mc) +
+  geom_vline(aes(xintercept = mean_count), data = df_mc) +
   facet_wrap(~season) +                                              # Make this a multi-panel figure by season
   scale_fill_discrete(name = "Day of Week") +                        # Set the name for the legend
   guides(color = FALSE) +                                            # Suppress legend for vertical lines
@@ -215,8 +209,7 @@ df_mc <- df_mc %>%
 
 g3 = g2 + geom_text(data = df_mc, 
                mapping = aes(x = x, y = y, 
-                             label = round(mean_count, 0),
-                             color = weekend),
+                             label = round(mean_count, 0)),
                size = 3,
                hjust = 1); g3
 
@@ -236,14 +229,14 @@ for(x in unique(d$FPA)){
   
   # Make data frame of mean values
   df_mc <- df_x %>%
-    group_by(season, weekend) %>%
+    group_by(season) %>%
     summarize(mean_count = mean(count))
   
-  g2 <- ggplot(df_x, aes(count, fill = weekend, group = weekend)) +      # Within panels, group by weekend
+  g2 <- ggplot(df_x, aes(count)) +
     geom_histogram(color = "grey20",                                   # Create histograms
+                   fill = "#DD00BB",
                    bins = 50) +
-    geom_vline(aes(xintercept = mean_count,
-                   color = weekend), data = df_mc) +
+    geom_vline(aes(xintercept = mean_count), data = df_mc) +
     facet_wrap(~season) +                                              # Make this a multi-panel figure by season
     scale_fill_discrete(name = "Day of Week") +                        # Set the name for the legend
     guides(color = FALSE) +                                            # Suppress legend for vertical lines
@@ -258,8 +251,7 @@ for(x in unique(d$FPA)){
   
   g3 = g2 + geom_text(data = df_mc, 
                  mapping = aes(x = x, y = y, 
-                               label = round(mean_count, 0),
-                               color = weekend),
+                               label = round(mean_count, 0)),
                  size = 3,
                  hjust = 1)
   
@@ -278,32 +270,37 @@ dev.off()
 fpa_groups <- readxl::read_xlsx(file.path(getwd(), 'Data', 'FPA_Regions.xlsx'))
 
 df_Region = left_join(df, fpa_groups, by = 'FPA') %>%
-  group_by(Region, date, year, month, season, weekend) %>%
+  group_by(Region, date, year, month, season) %>%
   summarize(count = sum(count))
 
+evaluated_regions = c()
 
 pdf('FPA_Grouped_NOTAM_hists.pdf', width = 8, height = 8)
 
-for(x in unique(df_Region$Region)){
+for(x in unique(df_Region$Region)[c(3,1,2)]){ # rearranging so Western is first
+  evaluated_regions <- append(evaluated_regions, x)
+  region_title_text = paste(evaluated_regions, collapse = " + ")
   
-  df_x = df_Region %>% filter(Region == x)
+  df_x = df_Region %>% filter(Region %in% evaluated_regions)
+  df_x = df_x %>% group_by(date, year, month, season) %>%
+    summarize(count = sum(count))
   
   # Make data frame of mean values
   df_mc <- df_x %>%
-    group_by(season, weekend) %>%
+    group_by(season) %>%
     summarize(mean_count = mean(count))
   
-  g2 <- ggplot(df_x, aes(count, fill = weekend, group = weekend)) +      # Within panels, group by weekend
+  g2 <- ggplot(df_x, aes(count)) +
     geom_histogram(color = "grey20",                                   # Create histograms
+                   fill = "#CCAA00",
                    bins = 50) +
-    geom_vline(aes(xintercept = mean_count,
-                   color = weekend), data = df_mc) +
+    geom_vline(aes(xintercept = mean_count), data = df_mc) +
     facet_wrap(~season) +                                              # Make this a multi-panel figure by season
     scale_fill_discrete(name = "Day of Week") +                        # Set the name for the legend
     guides(color = FALSE) +                                            # Suppress legend for vertical lines
     theme_bw() +
     ylab("Count of days") + xlab("Count of NOTAMs") +
-    ggtitle(paste0(x, " Service Area: Histograms of NOTAM counts by day"))
+    ggtitle(paste0(region_title_text, " Service Area: Histograms of NOTAM counts by day"))
   
   # Add annotations for each vertical line
   df_mc <- df_mc %>%
@@ -312,8 +309,7 @@ for(x in unique(df_Region$Region)){
   
   g3 = g2 + geom_text(data = df_mc, 
                  mapping = aes(x = x, y = y, 
-                               label = round(mean_count, 0),
-                               color = weekend),
+                               label = round(mean_count, 0)),
                  size = 3,
                  hjust = 1)
   
@@ -397,7 +393,6 @@ orig_dt_hr <- dt_hr %>%
   mutate(date = as.Date(yr_hour), 
          dow = format(yr_hour, '%A'),
          hour = format(yr_hour, '%H'),
-         weekend = as.factor(ifelse(dow == 'Saturday' | dow == 'Sunday', 'Weekend', 'Weekday')),
          month   = format(yr_hour, '%m'),
          season  = as.factor(ifelse(month == '12' | month == '01' | month == '02', 'Winter',
                                     ifelse(month == '03' | month == '04' | month == '05', 'Spring',
