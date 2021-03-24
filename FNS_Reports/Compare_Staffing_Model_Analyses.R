@@ -16,7 +16,7 @@ library(tidyverse)
 
 # Compile results ----
 
-# Could scan the directory as well, here manually entereing the 8 completed analyses as of March 2021.
+# Could scan the directory as well, here manually entering the 8 completed analyses as of March 2021.
 
 results_dirs <- c('Results_Max',
                   'Results_Mean',

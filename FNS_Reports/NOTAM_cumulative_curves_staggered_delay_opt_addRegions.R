@@ -4,6 +4,11 @@
 
 # Setup ----
 
+# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
+if(grepl('notam-metar$', getwd())){
+  setwd('./FNS_Reports')
+}
+
 # Get dependencies if not already installed
 source('Utility/get_packages.R')
 
@@ -17,9 +22,6 @@ library(dplyr)
 library(reshape2)
 library(tidyr)
 
-# Find the percentile days. This results in data frames of the 90th percentile busiest days, 
-# either by service area or across the whole NAS, by season, weekend/weekday type
-source('Find_percentile_days.R')
 
 # <<>><<>><<>>
 # User inputs - Three required inputs 
@@ -45,12 +47,6 @@ if(dir.exists(output_dir)){
 
 # <<>><<>><<>>
 
-# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
-if(grepl('notam-metar$', getwd())){
-  setwd('./FNS_Reports')
-}
-
-
 if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
   cat('Attempting to source the script to generate busy_periods data frame')
   rmarkdown::render('NOTAM_FNS_Analysis.Rmd')
@@ -58,7 +54,9 @@ if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
 
 load("FNS_NOTAM_Freq_w_busy_days.RData")
 
-
+# Find the percentile days. This results in data frames of the 90th percentile busiest days, 
+# either by service area or across the whole NAS, by season, weekend/weekday type
+source('Find_percentile_days.R')
 
 # <<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>>
 # Run busy day analysis ----

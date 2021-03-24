@@ -6,6 +6,11 @@
 # Setup ----
 
 
+# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
+if(grepl('notam-metar$', getwd())){
+  setwd('./FNS_Reports')
+}
+
 # <<>><<>><<>>
 # User inputs - Three required inputs
 
@@ -29,11 +34,6 @@ if(dir.exists(output_dir)){
 }
 
 # <<>><<>><<>>
-
-# Set working directory to location where NOTAM_Freq_w_busy_days.RData exists
-if(grepl('notam-metar$', getwd())){
-  setwd('./FNS_Reports')
-}
 
 # Get dependencies if not already installed
 source('Utility/get_packages.R')
