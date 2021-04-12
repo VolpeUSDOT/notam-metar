@@ -22,15 +22,18 @@ library(dplyr)
 library(reshape2)
 library(tidyr)
 
+# Find the percentile days. This results in data frames of the 90th percentile busiest days, 
+# either by service area or across the whole NAS by season
+source('Find_percentile_days.R')
 
 # <<>><<>><<>>
 # User inputs - Three required inputs 
 
 # 1. Specify a single integer, or a vector of integers for the delay targets in minutes
-max_delay_target = c(2, 5, 15) 
+max_delay_target = 2
 
 # 2. Should this analysis use the peak (absolute maximum) delay at any time in the 24 hours period, or the average delay?
-delay_target_type = 'Max' # Options: 'Max' or 'Mean'
+delay_target_type = 'Mean' # Options: 'Max' or 'Mean'
 
 # 3. Specify where to save the results. Any character string can be used here; it will become a directory where the output is save.
 output_dir = 'Results_Staggered_addRegion'
@@ -55,7 +58,7 @@ if(!file.exists("FNS_NOTAM_Freq_w_busy_days.RData")){
 load("FNS_NOTAM_Freq_w_busy_days.RData")
 
 # Find the percentile days. This results in data frames of the 90th percentile busiest days, 
-# either by service area or across the whole NAS, by season, weekend/weekday type
+# either by service area or across the whole NAS by season
 source('Find_percentile_days.R')
 
 # <<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>><<>>
@@ -75,12 +78,11 @@ region_sequence = list('Western',
 # set up blank data frame to save all staff model targets
 all_staff_models = vector()
 
-# Loop over season x weekend combinations
+# Loop over season combinations
 
 for(sw in 1:nrow(ninetieth_day_NAS)){
   # sw = 1
   season = ninetieth_day_NAS[sw, 'season']
-  weekend = ninetieth_day_NAS[sw, 'weekend']
   
   # Loop over targets 
   
@@ -89,7 +91,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
     staff_models = vector()
     
     # save to PDF
-    fn = paste0('NOTAM_Staffing_', season, '_', weekend, '_', formatC(delay_target_x, width = 2, flag = 0),'min_target.pdf')
+    fn = paste0('NOTAM_Staffing_', season, '_', formatC(delay_target_x, width = 2, flag = 0),'min_target.pdf')
     
     pdf(file.path(output_dir, fn), width = 10, height = 8)
     
@@ -97,8 +99,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
       
       # Region_x = c('Western', 'Central')
 
-      demand_day_of_interest = ninetieth_day_NAS[ninetieth_day_NAS$season == season &
-                                                    ninetieth_day_NAS$weekend == weekend, 'date']
+      demand_day_of_interest = ninetieth_day_NAS[ninetieth_day_NAS$season == season, 'date']
       
       # Count in the region (or group of regions) on the demand day
   
@@ -113,7 +114,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
       
       this_day = orig_dt_hr %>% 
         filter(date == bod & Region %in% Region_x) %>%
-        group_by(yr_hour, date, dow, hour, weekend, month, season) %>%
+        group_by(yr_hour, date, dow, hour, month, season) %>%
         summarize(hourly_count = sum(hourly_count))
       
       region_set_name = ifelse(length(Region_x) > 1,
@@ -126,7 +127,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
         geom_text(aes(label = hourly_count), nudge_y = 4) +
         geom_line() +
         xlab('Hour (UTC)') + ylab('Hourly NOTAM count') +
-        ggtitle(paste(region_set_name, bod, ', Busy Period Percentile:', 100* 0.9, '\n', season, weekend)) +
+        ggtitle(paste(region_set_name, bod, ', Busy Period Percentile:', 100* 0.9, '\n', season)) +
         theme_bw()
       
       print(gp)
@@ -260,7 +261,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
     
     write.csv(staff_models,
               file = file.path(output_dir, 
-                               paste0('Staff_models_90th_', season, '_', weekend, '_', delay_target_x, 'min_target.csv')),
+                               paste0('Staff_models_90th_', season, '_', delay_target_x, 'min_target.csv')),
               row.names = F)
     
     dev.off()#; system(paste('open', file.path(output_dir, fn)))
@@ -270,7 +271,7 @@ for(sw in 1:nrow(ninetieth_day_NAS)){
                                                           target = delay_target_x))
   } # end loop over targets
   
-} # end loop over season x weekend combinations
+} # end loop over season combinations
 
 write.csv(all_staff_models,
           file = file.path(output_dir, 
@@ -285,12 +286,12 @@ write.csv(all_staff_models,
 
 all_staff_models %>%
   filter(target == 2 & !is.na(target) & !is.na(season)) %>%
-  group_by(Region, season, weekend) %>%
+  group_by(Region, season) %>%
   summarize(max_staff = max(hourly_staff_model)) %>%
-  pivot_wider(id_cols = c(season, weekend),
+  pivot_wider(id_cols = c(season),
               names_from = Region,
               values_from = c(max_staff)) %>%
-  group_by(season, weekend) %>%
+  group_by(season) %>%
   rowwise() %>%
   mutate(Total = sum(across()))
 
@@ -301,12 +302,12 @@ all_staff_models %>%
 
 all_staff_models %>%
   filter(target == 2 & !is.na(target) & !is.na(season)) %>%
-  group_by(Region, season, weekend) %>%
+  group_by(Region, season) %>%
   summarize(sum_staff = sum(hourly_staff_model),
             max_staff = max(hourly_staff_model)) %>%
-  pivot_wider(id_cols = c(season, weekend),
+  pivot_wider(id_cols = c(season),
               names_from = Region,
               values_from = c(sum_staff)) %>%
-  group_by(season, weekend) %>%
+  group_by(season) %>%
   rowwise() %>%
   mutate(Total = sum(across()))

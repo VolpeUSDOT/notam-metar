@@ -22,7 +22,7 @@ compute_staff_reqd <- function(day,
                           dt$Action.Date < day_as_datetime + 60*60*24 &
                           dt$Region %in% Region,]
   
-  print(paste("Total NOTAMS in Period: ", count(arrivals_on_day) ))
+  # print(paste("Total NOTAMS in Period: ", count(arrivals_on_day) ))
   minute <- day_as_datetime + (minute-1)*60
   
   # Convert minute to UTC for consistency
@@ -76,7 +76,7 @@ compute_staff_reqd <- function(day,
   s_df_new$delay = s_df_new$minute.msgs_departed_from_queue - s_df_new$minute.arrivals
   s_df_new$time_in_system = s_df_new$minute.msgs_processed - s_df_new$minute.arrivals
   
-  print(s_df_new[which.max(s_df_new$time_in_system),])
+  # print(s_df_new[which.max(s_df_new$time_in_system),])
   
   average_minutes_in_system = round(as.numeric(mean(s_df_new$time_in_system, na.rm=T)), 2)
   average_minutes_delay = round(as.numeric(mean(s_df_new$delay/seconds_per_minute, na.rm=T)), 2) 

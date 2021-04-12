@@ -2,6 +2,7 @@
 *.txt
 .Rproj.user
 *.jpg
+*.png
 *.RData
 .Rhistory
 *.csv
