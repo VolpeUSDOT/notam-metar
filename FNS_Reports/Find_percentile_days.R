@@ -10,16 +10,17 @@ day_sums = orig_dt_hr %>%
 # Now find the quantile days for each set of regions
 
 regions = c("Western", "Central", "Eastern")
-service_acronyms = paste0(substr(regions, 1, 1), "SA")
 # this is an awkward line of code because of a design flaw in paste() which
 # throws an error on a string vector of length 1
-concat_service_acronyms <- function(r) {
+concat_service_acronyms <- function(regions, r) {
+  service_acronyms = paste0(substr(regions, 1, 1), "SA")
   if (r == 1) service_acronyms[1] else paste(service_acronyms[1:r],
                                              collapse = ' + ')
 }
+
 pctile_days = tibble()
 for (r in 1:length(regions)) {
-  sa_field <- concat_service_acronyms(r)
+  sa_field <- concat_service_acronyms(regions, r)
   pctile_days_section = day_sums %>%
     filter(Region %in% regions[1:r]) %>%
     # mutate(service_areas = sa_field) %>%
@@ -40,7 +41,7 @@ ninetieth = pctile_days %>% filter(quantile == 0.9)
 ninetieth_days = tibble()
 
 for(r in 1:length(regions)){
-  sa_field <- concat_service_acronyms(r)
+  sa_field <- concat_service_acronyms(regions, r)
   dr = day_sums %>% 
     filter(Region %in% regions[1:r]) %>%
     group_by(date) %>%
@@ -68,51 +69,67 @@ for(r in 1:length(regions)){
 
 ninetieth_days
 
-# Across the whole NAS, by season ----
+# results grouped by season ----
 
 day_sum_NAS = orig_dt_hr %>%
   ungroup() %>%
-  group_by(season, date) %>%
+  group_by(Region, date, season) %>%
   summarize(daily_count = sum(hourly_count))
 
 
-# Now find the quantile days 
+# Now find the quantile days
 
-pctile_day_NAS = day_sum_NAS %>%
-  ungroup() %>%
-  group_by(season) %>%
-  summarize(quantile = seq(0, 1, 0.1),
-            daily_count = quantile(daily_count, probs = seq(0, 1, 0.1)))
+ninetieth_day_seasons <- tibble()
 
-ninetieth = pctile_day_NAS %>% filter(quantile == 0.9)
-
-# Which days are the 90th percentile demand day?
-
-ninetieth_r = pctile_day_NAS %>% filter(quantile == 0.9)
-hundredth_r = pctile_day_NAS %>% filter(quantile == 1)  
-
-ninetieth_day_NAS  = tibble()
-
-for(s in unique(pctile_day_NAS$season)){
-  ninetieth_s = ninetieth_r %>% filter(season == s)
-  hundredth_s = hundredth_r %>% filter(season == s)
+for (r in 1:length(regions)) {
+  sa_field <- concat_service_acronyms(regions, r)
+  day_info <- day_sum_NAS %>%
+    ungroup() %>%
+    filter(Region %in% regions[1:r]) %>%
+    group_by(date, season) %>%
+    summarize(daily_count = sum(daily_count))
   
-  ninetieth_day_season = day_sum_NAS %>%
-    filter(season == s) %>%
-    filter(daily_count >=  ninetieth_s$daily_count & 
-             daily_count <  hundredth_s$daily_count) %>%
-    mutate(proximity_to_ninetieth = daily_count - ninetieth_s$daily_count)
+  pctile_day_NAS <- day_info %>%
+    group_by(season) %>%
+    summarize(service_areas = sa_field,
+              quantile = seq(0, 1, 0.1),
+              daily_count = quantile(daily_count, probs = seq(0, 1, 0.1)))
   
-  ninetieth_day_season = ninetieth_day_season %>% 
-    filter(proximity_to_ninetieth == min(ninetieth_day_season$proximity_to_ninetieth)) %>%
-    filter(date == min(date)) # arbitrary tiebreaker
+  ninetieth <- pctile_day_NAS %>% filter(quantile == 0.9)
   
-  # class(ninetieth_day_NAS) = 'data.frame'
+  # Which days are the 90th percentile demand day?
   
-  ninetieth_day_NAS = rbind(ninetieth_day_NAS, ninetieth_day_season)
+  ninetieth_r <- pctile_day_NAS %>% filter(quantile == 0.9)
+  hundredth_r <- pctile_day_NAS %>% filter(quantile == 1)
+  
+  for(s in unique(pctile_day_NAS$season)){
+    ninetieth_s <- ninetieth_r %>% filter(season == s)
+    hundredth_s <- hundredth_r %>% filter(season == s)
+    
+    ninetieth_day_s <- day_info %>%
+      filter(season == s &
+               daily_count >=  ninetieth_s$daily_count & 
+               daily_count <  hundredth_s$daily_count) %>%
+      mutate(proximity_to_ninetieth = daily_count - ninetieth_s$daily_count,
+             service_areas = sa_field)
+    
+    ninetieth_day_s <- ninetieth_day_s %>% 
+      filter(proximity_to_ninetieth ==
+               min(ninetieth_day_s$proximity_to_ninetieth)) %>%
+      ungroup() %>%
+      select(service_areas, season, date, daily_count, 
+             proximity_to_ninetieth) %>%
+      filter(date == min(date)) # arbitrary tiebreaker
+    
+    ninetieth_day_seasons <- rbind(ninetieth_day_seasons, ninetieth_day_s)
+  }
 }
 
-ninetieth_day_NAS
+ninetieth_day_seasons
 
-write.csv(ninetieth_day_NAS, file = 'Ninetieth_day_by_season.csv', row.names = F)
-write.csv(ninetieth_days, file = 'Ninetieth_day_by_service_area.csv', row.names = F)
+write.csv(ninetieth_day_seasons, file = 'Ninetieth_day_by_season.csv',
+          row.names = F)
+
+
+write.csv(ninetieth_days, file = 'Ninetieth_day_by_service_area.csv',
+          row.names = F)

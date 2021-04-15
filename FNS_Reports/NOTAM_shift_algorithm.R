@@ -38,6 +38,13 @@ if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
 
+# Get dependencies if not already installed
+source('Utility/get_packages.R')
+
+# Find the percentile days. This results in data frames of the 90th percentile
+# busiest days, either by service area or across the whole NAS by season
+source('Find_percentile_days.R')
+
 hours_in_day <- 24
 minutes_in_hour <- 60
 minutes_in_day <- hours_in_day * minutes_in_hour
@@ -216,15 +223,22 @@ eliminate_unprocessed_notams <- function(dt_busy_day) {
   average_delay <- Inf
   unprocessed_notams <- sum(dt_busy_day$incoming_notams)
   window_start <- (1:hours_in_day) - 1
+  acceptable_increase <- T
   
   print("Getting to 0 unprocessed NOTAMs...")
-  while (unprocessed_notams > 0) {
+  while (unprocessed_notams > 0 || 0 %in% on_staff) {
+    if (unprocessed_notams == 0 && acceptable_increase) {
+      average_delay <- Inf
+      acceptable_increase <- F
+    }
     fewest_unprocessed <- Inf
     shortest_delay <- Inf # tiebreaker
     best_hour <- hours_in_day
     best_model <- on_staff
     
     for (w in window_start) {
+      if (unprocessed_notams == 0 && !(0 %in% on_staff[(w+1):(w+shift_length)]))
+        next
       candidate_model <- on_staff
       for (i in (1:shift_length) - 1) {
         h = (w + i) %% hours_in_day
@@ -261,6 +275,8 @@ eliminate_unprocessed_notams <- function(dt_busy_day) {
     }
     else stop("could not reach 0 unprocessed NOTAMs; something has gone very wrong")
   }
+  
+  print("Done")
   
   staff_starting <- pad_vector_with_zeros(shift_hour_starts,
                                           minutes_in_hour)
@@ -394,7 +410,8 @@ compute_staff_model <- function(day,
 }
 
 optimize_staff_allocation <- function(day, number_of_staff,
-                                      regions = c("Western", "Central", "Eastern"),
+                                      regions = c("Western", "Central",
+                                                  "Eastern"),
                                       notam_processing_time = 3,
                                       shift_length = 8) {
   dt_busy_day <- get_notams_for_day(day, regions)
@@ -460,7 +477,7 @@ optimize_staff_allocation <- function(day, number_of_staff,
 
 # Plotting function with three panels
 plot_staff_model <- function(day, staff_model,
-                                Region,
+                                Region, season = "",
                                 focus_inset = F,
                                 focus_start = "11:00:00",
                                 focus_range = c(550, 650)) {
@@ -472,6 +489,8 @@ plot_staff_model <- function(day, staff_model,
   
   region_set_name = ifelse(length(Region) > 1,
                            paste(Region, collapse = ' + '), Region_x)
+  plural = ifelse(length(Region) > 1, "s", "")
+  colors <- c('#fb8072', '#80b1d3', "#b3de69")
   
   for_melting <- staff_model %>%
     mutate(hour = (1:length(staff_model$on_staff) - 1) / minutes_in_hour,
@@ -532,11 +551,13 @@ plot_staff_model <- function(day, staff_model,
                         select(value))
   
   pc_top <- p + 
-    geom_point(data = melted_model %>%
-                 filter(variable == "staff_starting" &
-                          hour == floor(hour)),
-               aes(hour, value),
-               size = 1.25, colour = 'darkblue') +
+    geom_col(data = melted_model %>%
+               filter(variable == "staff_starting" &
+                        hour == floor(hour)) %>%
+               select(hour, value),
+             aes(hour, value),
+             size = 1.25,
+             fill = colors[1]) +
     theme(legend.position = "none", # Remove the legend
           axis.title.x = element_blank(),
           axis.text.x = element_blank(),
@@ -545,7 +566,7 @@ plot_staff_model <- function(day, staff_model,
           axis.title = element_text(size = 10),
           legend.text = element_text(size = 10)) +   
     ylab("Staff starting shifts\n") +
-    labs(title = paste(region_set_name, 'Service Area -', day))
+    labs(title = paste0(region_set_name, ' Service Area', plural, ' - ', day))
   
   if(diff(staff_range) > 0){
     pc_top <- pc_top + scale_y_continuous(n.breaks = diff(staff_range)+1) 
@@ -569,12 +590,12 @@ plot_staff_model <- function(day, staff_model,
     pc_top_2 <- pc_top_2 + geom_smooth(data = melted_model %>%
                                          filter(variable == "available") , 
                                        aes(hour, value),
-                                       size = 1.25, colour = 'darkgreen') 
+                                       size = 1.25, colour = colors[3]) 
   } else {
     pc_top_2 <- pc_top_2 + geom_line(data = melted_model %>%
                                        filter(variable == "available") , 
                                      aes(hour, value),
-                                     size = 1.25, colour = 'darkgreen') 
+                                     size = 1.25, colour = colors[3]) 
   }
   
   # Put these together. egg::ggarrange is better than grid.arrange, because it
@@ -595,24 +616,25 @@ plot_staff_model <- function(day, staff_model,
          plot = ga,
          width = 6, height = 7)
   
-  # Focus plot
-  if(focus_inset){
-    
-    start_min = s_df %>% select(minute) %>% filter(grepl(focus_start,
-                                                         format(s_df$minute,
-                                                                '%H:%M:%S')))
-    end_min = start_min + 60*60*1 # 1 hour
-    
-    focus_pc <- pc +
-      xlim(unclass(start_min)$minute, unclass(end_min)$minute) +
-      ylim(focus_range[1], focus_range[2])
-    
-    ggsave(filename = paste0('Focus_', region_set_name, '_ninetieth_', day, '.png'),
-           plot = focus_pc,
-           width = 5, height = 4)
-    
-    
-  }
+  # # Focus plot
+  # if(focus_inset){
+  #   
+  #   start_min = s_df %>% select(minute) %>% filter(grepl(focus_start,
+  #                                                        format(s_df$minute,
+  #                                                               '%H:%M:%S')))
+  #   end_min = start_min + 60*60*1 # 1 hour
+  #   
+  #   focus_pc <- pc +
+  #     xlim(unclass(start_min)$minute, unclass(end_min)$minute) +
+  #     ylim(focus_range[1], focus_range[2])
+  #   
+  #   ggsave(filename = paste0('Focus_', region_set_name, '_ninetieth_', day,
+  #                            '_', season, '.png'),
+  #          plot = focus_pc,
+  #          width = 5, height = 4)
+  #   
+  #   
+  # }
   
   # end: plot cumulative curves
 }
@@ -623,12 +645,18 @@ for (i in 1:length(regions)) {
   print(paste('###### ', paste(regions[1:i], collapse=" + "), ' ######'))
   staff_model <- compute_staff_model(ninetieth_days$date[i], regions[1:i])
   plot_staff_model(ninetieth_days$date[i], staff_model, regions[1:i])
-}
-
-# plot seasons
-for (i in 1:length(ninetieth_day_NAS$date)) {
-  day <- ninetieth_day_NAS$date[i]
-  print(paste('###### ', day, ' ######'))
-  staff_model <- optimize_staff_allocation(day, sum(shifts_to_beat))
-  plot_staff_model(day, staff_model, regions)
+  
+  # plot seasons
+  ninetieth_day_rs <- ninetieth_day_seasons %>%
+    filter(service_areas == concat_service_acronyms(regions, i))
+  for (j in 1:length(ninetieth_day_rs$date)) {
+    day <- ninetieth_day_rs$date[j]
+    season <- ninetieth_day_rs$season[j]
+    print(paste('###### ', concat_service_acronyms(regions, i), season, day,
+                ' ######'))
+    staff_model <- optimize_staff_allocation(day,
+                                             sum(staff_model$staff_starting),
+                                             regions[1:i])
+    plot_staff_model(day, staff_model, regions[1:i], season)
+  }
 }
