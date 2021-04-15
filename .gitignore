@@ -1,4 +1,3 @@
-
 *.txt
 .Rproj.user
 *.jpg
@@ -11,4 +10,3 @@
 *.pdf
 *.html
 *.zip
-.Rhistory
