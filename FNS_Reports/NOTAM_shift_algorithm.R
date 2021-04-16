@@ -519,7 +519,7 @@ plot_staff_model <- function(day, staff_model,
                                               "processed_notams")),
               aes(hour, value, colour = variable),
               size = 1.25) +
-    
+    scale_x_continuous(breaks = 0:(hours_in_day / 4) * 4) + 
     guides(colour = "legend", linetype = FALSE) +
     scale_color_discrete(name = NULL, labels = c("NOTAMs Arrived for Processing",
                                                  "NOTAMs Departing Queue")) +
@@ -553,15 +553,17 @@ plot_staff_model <- function(day, staff_model,
   pc_top <- p + 
     geom_col(data = melted_model %>%
                filter(variable == "staff_starting" &
-                        hour == floor(hour)) %>%
+                        hour == floor(hour) &
+                        hour < hours_in_day) %>%
                select(hour, value),
              aes(hour, value),
              size = 1.25,
              fill = colors[1]) +
+    scale_x_continuous(breaks = (1:hours_in_day) - 1) +
     theme(legend.position = "none", # Remove the legend
-          axis.title.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
+          # axis.title.x = element_blank(),
+          # axis.text.x = element_blank(),
+          # axis.ticks.x = element_blank(),
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10),
           legend.text = element_text(size = 10)) +   
@@ -579,6 +581,7 @@ plot_staff_model <- function(day, staff_model,
           axis.ticks.x = element_blank(),
           axis.text = element_text(size = 10),
           axis.title = element_text(size = 10)) +
+    scale_x_continuous(breaks = 0:(hours_in_day / 4) * 4) + 
     scale_y_continuous(
       "Cumulative downtime\n(hours)", 
       sec.axis = sec_axis(~ .* 100 * minutes_in_hour /
