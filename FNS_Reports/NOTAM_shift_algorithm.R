@@ -202,6 +202,19 @@ get_daily_processing_stats <- function(on_staff, notams_by_minute,
   )
 }
 
+convert_shift_start_to_on_staff <- function(shift_hour_starts,
+                                            shift_length = 8) {
+  on_staff <- integer(length(shift_hour_starts))
+  for (i in 1:length(shift_hour_starts)) {
+    to_add <- shift_hour_starts[i]
+    for (w in (1:shift_length) - 1) {
+      full_index <- (i+w-1) %% length(on_staff) + 1
+      on_staff[full_index] <- on_staff[full_index] + to_add
+    }
+  }
+  on_staff
+}
+
 # helper function, output is dt_busy_day
 get_notams_for_day <- function(day, regions) {
   dt_busy_day <- dt %>%
@@ -409,6 +422,12 @@ compute_staff_model <- function(day,
   simulated_day
 }
 
+# - day is as.Date("YYYY-MM-DD")
+# - number_of_staff is the number of staff to allocate shifts for
+# - regions is a vector
+# - notam_processing_time is an integer representing how long it takes for a
+#   staff member to process a NOTAM once they get around to it.
+# - shift_length is an int representing the length of a shift in hours
 optimize_staff_allocation <- function(day, number_of_staff,
                                       regions = c("Western", "Central",
                                                   "Eastern"),
@@ -475,6 +494,56 @@ optimize_staff_allocation <- function(day, number_of_staff,
   simulated_day
 }
 
+# helper function for get_maximum_delay
+get_queue_clearing_time <- function(delayed_notams, on_staff, starting_index,
+                                    notam_processing_time) {
+  m <- ((starting_index - 1) %% minutes_in_day)
+  max_available <- Inf
+  available_staff <- max_available
+  notams_processing <- integer(notam_processing_time)
+  result <- 0
+  while (delayed_notams > 0) {
+    # if (starting_index == 1429) browser()
+    # remove processed notams from queue
+    notams_processed <- notams_processing[notam_processing_time]
+    
+    notams_processing <- c(0, notams_processing[1:notam_processing_time - 1])
+    
+    nearest_hour_index <- m %/% minutes_in_hour + 1
+    previous_max_available <- max_available
+    max_available <- on_staff[nearest_hour_index]
+    
+    available_staff <- min(max_available,
+                           available_staff + notams_processed)
+    if (previous_max_available < max_available) {
+      available_staff <- available_staff + max_available - previous_max_available
+    }
+    remove(previous_max_available)
+    
+    # placing all available staff on delayed NOTAMs
+    notams_processing[1] <- min(delayed_notams, available_staff)
+    available_staff <- available_staff - notams_processing[1]
+    delayed_notams <- delayed_notams - notams_processing[1]
+    
+    result <- result + 1
+    m <- (m+1) %% minutes_in_day
+  }
+  result
+}
+
+get_maximum_delay <- function(staff_model, notam_processing_time) {
+  delay <- 0
+  for (i in 1:minutes_in_day) {
+    os <- get_every_nth_element(staff_model$on_staff, minutes_in_hour)
+    candidate <- get_queue_clearing_time(staff_model$delayed_notams[i],
+                                         os,
+                                         i,
+                                         notam_processing_time)
+    delay <- max(delay, candidate)
+  }
+  delay
+}
+
 # Plotting function with three panels
 plot_staff_model <- function(day, staff_model,
                                 Region, season = "",
@@ -537,8 +606,7 @@ plot_staff_model <- function(day, staff_model,
             round(sum(staff_model$delayed_notams) /
                     sum(staff_model$incoming_notams), 2),
           "; Max delay-minutes: ",
-            ceiling(max(staff_model$delayed_notams / staff_model$on_staff) *
-            notam_processing_time),
+            get_maximum_delay(staff_model, notam_processing_time),
           "\n Staff hours available for non-NOTAM tasks: ",
             round(sum(staff_model$available) / 60, 1),
           "; Staff total hours: ",
@@ -642,14 +710,16 @@ plot_staff_model <- function(day, staff_model,
   # end: plot cumulative curves
 }
 
-# plot regions
+# plot regions & save models
 regions <- c('Western', 'Central', 'Eastern')
 for (i in 1:length(regions)) {
+  region_set_short <- paste(substr(regions[1:i], 1, 1), collapse="")
   print(paste('###### ', paste(regions[1:i], collapse=" + "), ' ######'))
   staff_model <- compute_staff_model(ninetieth_days$date[i], regions[1:i])
+  write.csv(staff_model, paste0('staff_model_90th_', region_set_short, '.csv'))
   plot_staff_model(ninetieth_days$date[i], staff_model, regions[1:i])
   
-  # plot seasons
+  # plot seasons & save models
   ninetieth_day_rs <- ninetieth_day_seasons %>%
     filter(service_areas == concat_service_acronyms(regions, i))
   for (j in 1:length(ninetieth_day_rs$date)) {
@@ -660,6 +730,9 @@ for (i in 1:length(regions)) {
     staff_model <- optimize_staff_allocation(day,
                                              sum(staff_model$staff_starting),
                                              regions[1:i])
+    write.csv(staff_model, paste0('staff_model_90th_',
+                                  region_set_short,
+                                  '_', season, '.csv'))
     plot_staff_model(day, staff_model, regions[1:i], season)
   }
 }
