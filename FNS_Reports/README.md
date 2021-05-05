@@ -24,30 +24,19 @@ There are several scripts for this work.
   + Compiles downloaded files into one data frame, and saves as `FNS_Reports.RData` as a single compressed file for easier reuse.
   + Prepares initial data data assessment
   + Filters out identical NOTAM IDs that occur within 10 minutes of each other, as well as NOTAM types 'Initiated' or 'Submitted for Review'. 
-  + Makes histograms by Service Area, by season and weekend
+  + Makes histograms by Service Area and by season
   + Prepares data for detailed analysis and saves as `FNS_NOTAM_Freq_w_busy_days.RData` for next step.
 
 2. Function scripts.
-  + `Busy_periods_functions.R`. This has the most important part of the process, the function `compute_staff_reqd()`. This function calculates on a minute-by-minute basis how each NOTAM is processed, and what delay will occur in the processing. This script also provides the function `plot_staffing_model_focus()` which generates the visual representation of a given day and staffing model.
-  + `Find_percentile_days.R`. This script finds which days in the study period match a certain percentile of business (in terms of total number of NOTAMs received). Currently configured to find the 90th percentile days either across the NAS by season and weekday type, or for each Service Area. 
+  + `Find_percentile_days.R`. This script finds which days in the study period match a certain percentile of business (in terms of total number of NOTAMs received). Currently configured to find the 90th percentile days either across the NAS by season and weekday type, or for each service area combination.
+  + `NOTAM_demand_plots.R`. This generates histograms of NOTAM counts by day across service area combinations and seasons, as well as hourly and cumulative demand plots for each service area combination and season. 
 
-3. Staffing model scripts. There are currently four options, depending on what combination of Service Areas and type of staffing model to use.  
-  + `NOTAM_cumulative_curves_shift_delay_opt.R`
-    - Starts from `FNS_NOTAM_Freq_w_busy_days.RData`
-    - Identifies 90th percentile days by season and weekend, or optionally by Service Area
-    - Calculates staff needed using an optimization method on the function `compute_staff_reqd()` to find the staff needed to achieve a specified maximum NOTAM processing delay target (e.g., 2 minutes)
-    - Plots the results in compiled PDFs and additionally as individual .jpeg files using the function `plot_staffing_model_focus()`
-    - Can do this for either the mean or max delay encountered during a 24 hour period.
-    
-  + `NOTAM_cumulative_curves_staggered_delay_opt.R`
-    - Similar to above, but instead of 3 8-hour shifts in the day, each staff member is allowed to start at any hour of the day. 
-
-  + `NOTAM_cumulative_curves_shift_delay_opt_addRegions.R`
-    - 8 hour shifts, and consecutively does just WSA, then WSA + CSA, then WSA + CSA + ESA regions instead of each Service Area separately.
-    - As before, can select either mean or max delay.
-    
-  + `NOTAM_cumulative_curves_staggered_delay_opt_addRegions.R`
-    - Staggered shifts, WSA, WSA + CSA, WSA + CSA + ESA regions.
+3. `NOTAM_shift_algorithm.R`. For each service area combination and season, generate suitable staff allocations 
+  + Identifies 90th percentile days by season and service area combination
+  + Calculates staff needed using an optimization method on the function `compute_staff_model()` to find the staff needed to achieve a specified mean NOTAM processing delay target (e.g., 2 minutes)
+  + Creates schedules for each season using the function `optimize_staff_allocation()` on the 90th percentile days for each season and the number of staff determined with `compute_staff_model()`
+  + Writes the staffing model for each season and service area combination to .csv files
+  + Plots the results in individual .png files using the function `plot_staffing_model`
     
 
 4. Analysis
