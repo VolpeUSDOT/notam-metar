@@ -127,9 +127,11 @@ for (r in 1:length(regions)) {
 
 ninetieth_day_seasons
 
-write.csv(ninetieth_day_seasons, file = 'Ninetieth_day_by_season.csv',
+write.csv(ninetieth_day_seasons, file = file.path(output_dir,
+                                                  'Ninetieth_day_by_season.csv'),
           row.names = F)
 
 
-write.csv(ninetieth_days, file = 'Ninetieth_day_by_service_area.csv',
+write.csv(ninetieth_days, file = file.path(output_dir,
+                                           'Ninetieth_day_by_service_area.csv'),
           row.names = F)

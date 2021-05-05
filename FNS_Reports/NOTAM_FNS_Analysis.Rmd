@@ -179,7 +179,7 @@ ggsave(plot = g1.1, filename = "NOTAM_Freq_timeline_we.jpg", width = 6, height =
 
 ```
 
-### 2. Histograms by season
+### Histograms by season
 
 This figure shows the distribution of the count of NOTAMs by date. Each bar represents a range of NOTAM counts, and the height of bar indicates number of days with that many NOTAMs. The vertical colored lines indicate the mean count of NOTAMs for that season. 
 

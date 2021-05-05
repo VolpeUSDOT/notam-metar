@@ -38,6 +38,8 @@ if(grepl('notam-metar$', getwd())){
   setwd('./FNS_Reports')
 }
 
+output_dir <- "Results"
+
 # Get dependencies if not already installed
 source('Utility/get_packages.R')
 
@@ -47,6 +49,9 @@ source('Find_percentile_days.R')
 
 hours_in_day <- 24
 minutes_in_hour <- 60
+shift_length <- 8
+notam_processing_time <- 3
+max_delay_target <- 2
 minutes_in_day <- hours_in_day * minutes_in_hour
 
 # - v is the numerical vector to pad
@@ -557,7 +562,7 @@ plot_staff_model <- function(day, staff_model,
   # focus_inset = TRUE;  focus_start = "11:00:00"; Region = 'Eastern'
   
   region_set_name = ifelse(length(Region) > 1,
-                           paste(Region, collapse = ' + '), Region_x)
+                           paste(Region, collapse = ' + '), Region)
   plural = ifelse(length(Region) > 1, "s", "")
   colors <- c('#fb8072', '#80b1d3', "#b3de69")
   
@@ -682,7 +687,7 @@ plot_staff_model <- function(day, staff_model,
   
   ggsave(filename = file.path(output_dir, paste0(region_set_short, '_ninetieth_',
                                                  day, '_', season, '_',
-                                                 delay_target_x,
+                                                 max_delay_target,
                                                  'min_target.png')),
          plot = ga,
          width = 6, height = 7)
@@ -710,13 +715,18 @@ plot_staff_model <- function(day, staff_model,
   # end: plot cumulative curves
 }
 
+# generate plots for NOTAM counts by day & demand for all 90th percentile days
+source('NOTAM_demand_plots.R')
+
 # plot regions & save models
 regions <- c('Western', 'Central', 'Eastern')
 for (i in 1:length(regions)) {
   region_set_short <- paste(substr(regions[1:i], 1, 1), collapse="")
   print(paste('###### ', paste(regions[1:i], collapse=" + "), ' ######'))
   staff_model <- compute_staff_model(ninetieth_days$date[i], regions[1:i])
-  write.csv(staff_model, paste0('staff_model_90th_', region_set_short, '.csv'))
+  write.csv(staff_model, file.path(output_dir, paste0('staff_model_90th_',
+                                                      region_set_short,
+                                                      '.csv')))
   plot_staff_model(ninetieth_days$date[i], staff_model, regions[1:i])
   
   # plot seasons & save models
@@ -730,9 +740,9 @@ for (i in 1:length(regions)) {
     staff_model <- optimize_staff_allocation(day,
                                              sum(staff_model$staff_starting),
                                              regions[1:i])
-    write.csv(staff_model, paste0('staff_model_90th_',
-                                  region_set_short,
-                                  '_', season, '.csv'))
+    write.csv(staff_model, file.path(output_dir, paste0('staff_model_90th_',
+                                                        region_set_short, '_',
+                                                        season, '.csv')))
     plot_staff_model(day, staff_model, regions[1:i], season)
   }
 }
