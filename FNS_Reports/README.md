@@ -38,10 +38,6 @@ There are several scripts for this work.
   + Writes the staffing model for each season and service area combination to .csv files
   + Plots the results in individual .png files using the function `plot_staffing_model`
     
-
-4. Analysis
-  + `Compare_Staffing_Model_Analyses.R` looks at the results of the optimized models and prepares summaries for the report.
-
 ## Code 
 
 This code is maintained in `https://github.com/VolpeUSDOT/notam-metar/`. Contact `daniel.flynn@dot.gov` for access.
