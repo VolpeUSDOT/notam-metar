@@ -2,7 +2,7 @@
 Integration of NOTAM facility condition and METAR weather condition messages
 
 As part of OPSNET-R proof-of-concept project.
-1.3 M notice to [NOTAMs](https://www.faa.gov/air_traffic/publications/notices/) are issued in the US each year, everything from runway slippery to a light is out. [METARs](https://www.aviationweather.gov/metar) are  
+1.3 M notice to [NOTAMs](https://www.faa.gov/air_traffic/publications/notices/) are issued in the US each year, everything from runway slippery to a light is out. [METARs](https://www.aviationweather.gov/metar) are weather notices. This project explores the benefits of integrating these.
 
 ## Goals
 
